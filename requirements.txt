@@ -1,0 +1,6 @@
+huaweicloudsdkcore
+huaweicloudsdkvpc
+huaweicloudsdkecs
+huaweicloudsdkiam
+huaweicloudsdkobs
+huaweicloudsdkfunctiongraph

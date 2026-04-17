@@ -1,0 +1,14 @@
+{
+    "ak": "${ak}",
+    "sk": "${sk}",
+    "project_id": "${project_id}",
+    "domain_id": "${domain_id}",
+    "region": "${region}",
+    "user_id": "${user_id}",
+    "ecs": {
+      "image_ref": "${image_ref}",
+      "flavor_ref": "${flavor_ref}",
+      "root_volume_type": "${root_volume_type}",
+      "root_volume_size": "${root_volume_size}"
+    }
+}

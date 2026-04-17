@@ -1,0 +1,4 @@
+username,email,password,enabled
+john.doe,john.doe@example.com,ExamplePass@1234!,true
+jane.smith,jane.smith@example.com,S3cur3P@ssword#,true
+bob.johnson,bob.johnson@example.com,B0b$Example2026,true
