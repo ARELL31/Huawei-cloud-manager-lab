@@ -72,6 +72,10 @@ python manage.py
 | `2`    | **Habilitar usuarios desde CSV** — reactiva cuentas deshabilitadas.                                  |
 | `3`    | **Deshabilitar usuarios desde CSV** — suspende cuentas sin eliminarlas.                              |
 | `4`    | **Eliminar grupo y sus recursos** — elimina ECS, subnets, VPC, usuarios y el grupo (irreversible).   |
+| `5`    | **Eliminar usuario individual** — elimina un usuario y sus ECS asociadas; opcionalmente lo remueve del grupo. |
+| `6`    | **Eliminar ECS individual** — elimina una instancia ECS junto con su volumen e IP pública.           |
+| `7`    | **Eliminar Subnet individual** — elimina una subnet dentro de una VPC especificada.                  |
+| `8`    | **Eliminar VPC individual** — elimina una VPC vacía (sin subnets activas).                           |
 | `0`    | Salir.                                                                                               |
 
 ## Estructura del proyecto
@@ -79,26 +83,29 @@ python manage.py
 ```
 Huawei-cloud-manager-lab/
 ├── config/
-│   ├── config.json          # Credenciales y parámetros (no subir al repo)
-│   └── connection.py        # Fábricas de clientes IAM, ECS y VPC
+│   ├── config.json              # Credenciales y parámetros (no subir al repo)
+│   └── connection.py            # Fábricas de clientes IAM, ECS y VPC
 ├── utils/
-│   ├── convert_cvs.py       # Parseo del CSV a objetos de usuario
-│   ├── create_users.py      # Creación completa de usuarios y recursos
-│   ├── enable_users.py      # Habilitación de usuarios
-│   ├── disable_users.py     # Deshabilitación de usuarios
-│   ├── create_user_group.py # Creación de grupo IAM
-│   ├── add_user_group.py    # Asignación de usuarios a grupo
-│   ├── grant_user_group.py  # Asignación de política al grupo
-│   ├── create_custom_policy.py # Creación de política personalizada
-│   ├── create_vpc.py        # Creación de VPC
-│   ├── create_user_subnets.py  # Creación de subnets por usuario
-│   ├── create_user_ecs.py   # Creación de instancias ECS por usuario
-│   └── delete_all.py # Eliminación completa de recursos del grupo
+│   ├── convert_cvs.py           # Parseo del CSV a objetos de usuario
+│   ├── delete_all.py            # Eliminación masiva e individual de recursos
+│   ├── iam/
+│   │   ├── create_users.py      # Creación completa de usuarios y recursos
+│   │   ├── enable_users.py      # Habilitación de usuarios
+│   │   ├── disable_users.py     # Deshabilitación de usuarios
+│   │   ├── create_user_group.py # Creación de grupo IAM
+│   │   ├── add_user_group.py    # Asignación de usuarios a grupo
+│   │   ├── grant_user_group.py  # Asignación de política al grupo
+│   │   └── create_custom_policy.py # Creación de política personalizada
+│   ├── vpc/
+│   │   ├── create_vpc.py        # Creación de VPC
+│   │   └── create_user_subnets.py  # Creación de subnets por usuario
+│   └── ecs/
+│       └── create_user_ecs.py   # Creación de instancias ECS por usuario
 ├── test/
-│   ├── connection_test.py   # Prueba de conectividad con la API
+│   ├── connection_test.py       # Prueba de conectividad con la API
 │   └── README.md
-├── usuarios.csv             # Ejemplo de CSV de usuarios
-├── manage.py                # Punto de entrada (menú interactivo)
+├── usuarios.csv                 # Ejemplo de CSV de usuarios
+├── manage.py                    # Punto de entrada (menú interactivo)
 └── requirements.txt
 ```
 
