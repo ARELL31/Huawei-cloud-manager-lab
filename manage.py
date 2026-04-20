@@ -1,8 +1,8 @@
 import sys
-from utils.create_users import create_users
-from utils.enable_users import enable_users
-from utils.disable_users import disable_users
-from utils.delete_group_resources import delete_group_resources  # <-- nuevo
+from utils.iam.create_users import create_users
+from utils.iam.enable_users import enable_users
+from utils.iam.disable_users import disable_users
+from utils.delete_group_resources import delete_group_resources
 
 
 MENU = """
