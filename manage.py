@@ -2,7 +2,7 @@ import sys
 from utils.iam.create_users import create_users
 from utils.iam.enable_users import enable_users
 from utils.iam.disable_users import disable_users
-from utils.delete_group_resources import delete_group_resources
+from utils.delete_all import delete_all, delete_single_user, delete_single_ecs, delete_single_subnet, delete_single_vpc
 
 
 MENU = """
@@ -13,6 +13,11 @@ MENU = """
 2. Habilitar usuarios desde CSV
 3. Deshabilitar usuarios desde CSV
 4. Eliminar grupo y sus recursos
+--- Eliminacion individual ---
+5. Eliminar usuario individual
+6. Eliminar ECS individual
+7. Eliminar Subnet individual
+8. Eliminar VPC individual
 0. Salir
 ------------------------------
 Selecciona una opcion: """
@@ -59,7 +64,60 @@ def menu_eliminar_grupo():
     if confirm != "s":
         print("[AVISO] Operacion cancelada.")
         return
-    delete_group_resources(group_name)
+    delete_all(group_name)
+
+
+def menu_eliminar_usuario():
+    username = input("Nombre del usuario a eliminar: ").strip()
+    if not username:
+        print("[AVISO] No ingresaste nombre de usuario.")
+        return
+    group_name = input("Nombre del grupo al que pertenece (dejar vacio si no aplica): ").strip()
+    confirm = input(f"Esto eliminara al usuario '{username}' y sus ECS. Confirmar? (s/n): ").strip().lower()
+    if confirm != "s":
+        print("[AVISO] Operacion cancelada.")
+        return
+    delete_single_user(username, group_name)
+
+
+def menu_eliminar_ecs():
+    server_name = input("Nombre de la ECS a eliminar: ").strip()
+    if not server_name:
+        print("[AVISO] No ingresaste nombre de ECS.")
+        return
+    confirm = input(f"Esto eliminara la ECS '{server_name}' junto con su volumen e IP publica. Confirmar? (s/n): ").strip().lower()
+    if confirm != "s":
+        print("[AVISO] Operacion cancelada.")
+        return
+    delete_single_ecs(server_name)
+
+
+def menu_eliminar_subnet():
+    subnet_name = input("Nombre de la Subnet a eliminar: ").strip()
+    if not subnet_name:
+        print("[AVISO] No ingresaste nombre de subnet.")
+        return
+    vpc_name = input("Nombre de la VPC a la que pertenece: ").strip()
+    if not vpc_name:
+        print("[AVISO] No ingresaste nombre de VPC.")
+        return
+    confirm = input(f"Esto eliminara la subnet '{subnet_name}' de la VPC '{vpc_name}'. Confirmar? (s/n): ").strip().lower()
+    if confirm != "s":
+        print("[AVISO] Operacion cancelada.")
+        return
+    delete_single_subnet(subnet_name, vpc_name)
+
+
+def menu_eliminar_vpc():
+    vpc_name = input("Nombre de la VPC a eliminar: ").strip()
+    if not vpc_name:
+        print("[AVISO] No ingresaste nombre de VPC.")
+        return
+    confirm = input(f"Esto eliminara la VPC '{vpc_name}' (debe no tener subnets). Confirmar? (s/n): ").strip().lower()
+    if confirm != "s":
+        print("[AVISO] Operacion cancelada.")
+        return
+    delete_single_vpc(vpc_name)
 
 
 OPTIONS = {
@@ -67,6 +125,10 @@ OPTIONS = {
     "2": menu_habilitar_usuarios,
     "3": menu_deshabilitar_usuarios,
     "4": menu_eliminar_grupo,
+    "5": menu_eliminar_usuario,
+    "6": menu_eliminar_ecs,
+    "7": menu_eliminar_subnet,
+    "8": menu_eliminar_vpc,
 }
 
 
