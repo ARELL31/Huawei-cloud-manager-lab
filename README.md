@@ -93,7 +93,7 @@ Huawei-cloud-manager-lab/
 │   ├── create_vpc.py        # Creación de VPC
 │   ├── create_user_subnets.py  # Creación de subnets por usuario
 │   ├── create_user_ecs.py   # Creación de instancias ECS por usuario
-│   └── delete_group_resources.py # Eliminación completa de recursos del grupo
+│   └── delete_all.py # Eliminación completa de recursos del grupo
 ├── test/
 │   ├── connection_test.py   # Prueba de conectividad con la API
 │   └── README.md

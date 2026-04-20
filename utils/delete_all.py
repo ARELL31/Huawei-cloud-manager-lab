@@ -124,7 +124,7 @@ def delete_subnets_and_vpc(vpc_client, group_name: str, config_file: str):
         print(f"[ERROR] VPC/Subnets: {e.error_msg}")
 
 
-def delete_group_resources(group_name: str, config_file: str = "config/config.json"):
+def delete_all(group_name: str, config_file: str = "config/config.json"):
     iam_client = get_client(config_file)
     ecs_client = get_ecs_client(config_file)
     vpc_client = get_vpc_client(config_file)

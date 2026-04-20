@@ -2,7 +2,7 @@ import sys
 from utils.iam.create_users import create_users
 from utils.iam.enable_users import enable_users
 from utils.iam.disable_users import disable_users
-from utils.delete_group_resources import delete_group_resources
+from utils.delete_all import delete_all
 
 
 MENU = """
@@ -59,7 +59,7 @@ def menu_eliminar_grupo():
     if confirm != "s":
         print("[AVISO] Operacion cancelada.")
         return
-    delete_group_resources(group_name)
+    delete_all(group_name)
 
 
 OPTIONS = {
