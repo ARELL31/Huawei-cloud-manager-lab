@@ -1,12 +1,12 @@
 import json
 from config.connection import get_client
 from utils.convert_cvs import csv_to_iam_users
-from utils.create_user_group import create_user_group
-from utils.add_user_group import add_users_to_group
-from utils.grant_user_group import grant_group_role
-from utils.create_vpc import create_vpc
-from utils.create_user_subnets import create_user_subnets
-from utils.create_user_ecs import create_user_ecs
+from utils.iam.create_user_group import create_user_group
+from utils.iam.add_user_group import add_users_to_group
+from utils.iam.grant_user_group import grant_group_role
+from utils.vpc.create_vpc import create_vpc
+from utils.vpc.create_user_subnets import create_user_subnets
+from utils.ecs.create_user_ecs import create_user_ecs
 from huaweicloudsdkiam.v3 import (
     CreateUserRequest,
     CreateUserRequestBody,

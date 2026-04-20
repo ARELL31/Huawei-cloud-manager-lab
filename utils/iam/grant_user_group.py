@@ -1,6 +1,6 @@
 import json
 from config.connection import get_client
-from utils.create_custom_policy import create_custom_policy
+from utils.iam.create_custom_policy import create_custom_policy
 from huaweicloudsdkiam.v3 import (
     KeystoneListGroupsRequest,
     KeystoneAssociateGroupWithDomainPermissionRequest,
