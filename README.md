@@ -1,4 +1,4 @@
-# Huawei Cloud IAM Manager
+# Huawei Cloud Computer Laboratory
 
 Herramienta de línea de comandos para gestionar usuarios, grupos, VPCs, subnets e instancias ECS en Huawei Cloud a través de su SDK oficial de Python.
 

@@ -474,7 +474,7 @@ class ListPanel(wx.Panel):
 
 class MainFrame(wx.Frame):
     def __init__(self):
-        super().__init__(None, title="Huawei Cloud IAM Manager",
+        super().__init__(None, title="Huawei Cloud Computer Laboratory",
                          size=(920, 720), style=wx.DEFAULT_FRAME_STYLE)
         self.SetMinSize((780, 580))
         self._build()

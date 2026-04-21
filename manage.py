@@ -15,7 +15,7 @@ from utils.list_resources import (
 
 MENU_PRINCIPAL = """
 ==============================
-   Huawei Cloud IAM Manager
+   Huawei Cloud Computer Laboratory
 ==============================
 1. Crear
 2. Eliminar
