@@ -3,6 +3,7 @@ from utils.iam.create_users import create_users
 from utils.iam.enable_users import enable_users
 from utils.iam.disable_users import disable_users
 from utils.delete_all import delete_all, delete_single_user, delete_single_ecs, delete_single_subnet, delete_single_vpc
+from utils.csv_validator import validate_csv
 from utils.list_resources import (
     list_groups,
     list_group_users,
@@ -67,12 +68,11 @@ def pedir_csv():
         return None
     return csv_file
 
-
-# --- Handlers de Crear ---
-
 def menu_crear_usuarios():
     csv_file = pedir_csv()
     if not csv_file:
+        return
+    if not validate_csv(csv_file):
         return
     group_name = input("Nombre del grupo a crear al finalizar (Enter para omitir): ").strip()
     if not group_name:
@@ -92,9 +92,6 @@ def menu_deshabilitar_usuarios():
     csv_file = pedir_csv()
     if csv_file:
         disable_users(csv_file)
-
-
-# --- Handlers de Eliminar ---
 
 def menu_eliminar_grupo():
     group_name = input("Nombre del grupo a eliminar (y todos sus recursos): ").strip()
@@ -160,9 +157,6 @@ def menu_eliminar_vpc():
         return
     delete_single_vpc(vpc_name)
 
-
-# --- Handlers de Listar ---
-
 def menu_listar_grupos():
     list_groups()
 
@@ -202,9 +196,6 @@ def menu_listar_subnets():
         return
     list_subnets_for_vpc(vpc_name)
 
-
-# --- Submenus ---
-
 OPCIONES_CREAR = {
     "1": menu_crear_usuarios,
     "2": menu_habilitar_usuarios,
@@ -239,9 +230,6 @@ def submenu(prompt: str, opciones: dict):
             action()
         else:
             print("[AVISO] Opcion no valida, intenta de nuevo.")
-
-
-# --- Menu principal ---
 
 OPCIONES_PRINCIPAL = {
     "1": lambda: submenu(MENU_CREAR, OPCIONES_CREAR),
