@@ -1,31 +1,13 @@
-import json
-from config.connection import get_client
+from config.connection import get_client, load_config
+from utils.iam.helpers import find_group_id
 from utils.iam.create_custom_policy import create_custom_policy
-from huaweicloudsdkiam.v3 import (
-    KeystoneListGroupsRequest,
-    KeystoneAssociateGroupWithDomainPermissionRequest,
-)
+from huaweicloudsdkiam.v3 import KeystoneAssociateGroupWithDomainPermissionRequest
 from huaweicloudsdkcore.exceptions import exceptions
 
 
-def find_group_id(client, group_name: str):
-    request = KeystoneListGroupsRequest()
-    response = client.keystone_list_groups(request)
-    for group in response.groups:
-        if group.name == group_name:
-            return group.id
-    return None
-
-
-def grant_group_role(
-    group_name: str,
-    config_file: str = "config/config.json"
-):
+def grant_group_role(group_name: str, config_file: str = "config/config.json"):
     client = get_client(config_file)
-
-    with open(config_file, "r", encoding="utf-8") as f:
-        config = json.load(f)
-
+    config = load_config(config_file)
     domain_id = config["domain_id"]
 
     group_id = find_group_id(client, group_name)
