@@ -1,15 +1,12 @@
-import json
 import time
-from config.connection import get_client, get_ecs_client
+from config.connection import get_client, get_ecs_client, get_vpc_client
 from huaweicloudsdkiam.v3 import (
-    KeystoneListUsersRequest,
     KeystoneListGroupsRequest,
-    KeystoneListProjectPermissionsForGroupRequest,
-    KeystoneRemoveProjectPermissionFromGroupRequest,
-    KeystoneListGroupsForUserRequest,
     KeystoneRemoveUserFromGroupRequest,
     KeystoneDeleteGroupRequest,
     KeystoneDeleteUserRequest,
+    KeystoneListUsersForGroupByAdminRequest,
+    KeystoneListUsersRequest,
 )
 from huaweicloudsdkecs.v2 import (
     ListServersDetailsRequest,
@@ -18,27 +15,12 @@ from huaweicloudsdkecs.v2 import (
     DeleteServersRequestBody,
 )
 from huaweicloudsdkvpc.v2 import (
-    VpcClient,
     ListVpcsRequest,
     DeleteVpcRequest,
     ListSubnetsRequest,
     DeleteSubnetRequest,
 )
-from huaweicloudsdkvpc.v2.region.vpc_region import VpcRegion
-from huaweicloudsdkcore.auth.credentials import BasicCredentials
 from huaweicloudsdkcore.exceptions import exceptions
-
-
-def get_vpc_client(config_file):
-    with open(config_file, "r", encoding="utf-8") as f:
-        config = json.load(f)
-    credentials = BasicCredentials(config["ak"], config["sk"], config["project_id"])
-    return (
-        VpcClient.new_builder()
-        .with_credentials(credentials)
-        .with_region(VpcRegion.value_of(config["region"]))
-        .build()
-    )
 
 
 def find_group(client, group_name: str):
@@ -50,7 +32,6 @@ def find_group(client, group_name: str):
 
 
 def get_group_users(client, group_id: str) -> list:
-    from huaweicloudsdkiam.v3 import KeystoneListUsersForGroupByAdminRequest
     try:
         request = KeystoneListUsersForGroupByAdminRequest(group_id=group_id)
         response = client.keystone_list_users_for_group_by_admin(request)
@@ -62,26 +43,23 @@ def get_group_users(client, group_id: str) -> list:
 
 def delete_ecs_for_users(ecs_client, usernames: list[str]):
     try:
-        request = ListServersDetailsRequest()
-        response = ecs_client.list_servers_details(request)
+        response = ecs_client.list_servers_details(ListServersDetailsRequest())
         servers = response.servers or []
 
-        to_delete = []
-        for server in servers:
-            owner = (server.metadata or {}).get("owner", "")
-            if owner in usernames:
-                to_delete.append(server)
+        to_delete = [
+            s for s in servers
+            if (s.metadata or {}).get("owner", "") in usernames
+        ]
 
         if not to_delete:
             print("[INFO] No se encontraron ECS con tag owner de estos usuarios.")
             return
 
-        server_ids = [ServerId(id=s.id) for s in to_delete]
         del_request = DeleteServersRequest()
         del_request.body = DeleteServersRequestBody(
             delete_publicip=True,
             delete_volume=True,
-            servers=server_ids
+            servers=[ServerId(id=s.id) for s in to_delete]
         )
         ecs_client.delete_servers(del_request)
         for s in to_delete:
@@ -91,11 +69,7 @@ def delete_ecs_for_users(ecs_client, usernames: list[str]):
         print(f"[ERROR] No se pudieron eliminar ECS: {e.error_msg}")
 
 
-def delete_subnets_and_vpc(vpc_client, group_name: str, config_file: str):
-    with open(config_file, "r", encoding="utf-8") as f:
-        config = json.load(f)
-    project_id = config["project_id"]
-
+def delete_subnets_and_vpc(vpc_client, group_name: str):
     try:
         vpcs = vpc_client.list_vpcs(ListVpcsRequest()).vpcs or []
         vpc = next((v for v in vpcs if v.name == group_name), None)
@@ -106,10 +80,7 @@ def delete_subnets_and_vpc(vpc_client, group_name: str, config_file: str):
         subnets = vpc_client.list_subnets(ListSubnetsRequest(vpc_id=vpc.id)).subnets or []
         for subnet in subnets:
             try:
-                vpc_client.delete_subnet(DeleteSubnetRequest(
-                    vpc_id=vpc.id,
-                    subnet_id=subnet.id
-                ))
+                vpc_client.delete_subnet(DeleteSubnetRequest(vpc_id=vpc.id, subnet_id=subnet.id))
                 print(f"[OK] Subnet eliminada: {subnet.name} ({subnet.id})")
             except exceptions.ClientRequestException as e:
                 print(f"[ERROR] Subnet {subnet.name}: {e.error_msg}")
@@ -183,9 +154,6 @@ def delete_single_ecs(server_name: str, config_file: str = "config/config.json")
 
 def delete_single_subnet(subnet_name: str, vpc_name: str, config_file: str = "config/config.json"):
     vpc_client = get_vpc_client(config_file)
-    with open(config_file, "r", encoding="utf-8") as f:
-        config = json.load(f)
-
     try:
         vpcs = vpc_client.list_vpcs(ListVpcsRequest()).vpcs or []
         vpc = next((v for v in vpcs if v.name == vpc_name), None)
@@ -252,7 +220,7 @@ def delete_all(group_name: str, config_file: str = "config/config.json"):
         print("[INFO] Esperando 15s para que las ECS se liberen...")
         time.sleep(15)
 
-    delete_subnets_and_vpc(vpc_client, group_name, config_file)
+    delete_subnets_and_vpc(vpc_client, group_name)
 
     for username, user_id in user_ids.items():
         try:

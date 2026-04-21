@@ -1,5 +1,4 @@
-import json
-from config.connection import get_client
+from config.connection import get_client, load_config
 from huaweicloudsdkiam.v3 import (
     KeystoneCreateGroupRequest,
     KeystoneCreateGroupRequestBody,
@@ -14,10 +13,7 @@ def create_user_group(
     config_file: str = "config/config.json"
 ):
     client = get_client(config_file)
-
-    with open(config_file, "r", encoding="utf-8") as f:
-        config = json.load(f)
-
+    config = load_config(config_file)
     domain_id = config["domain_id"]
 
     try:

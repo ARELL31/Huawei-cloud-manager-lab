@@ -1,5 +1,4 @@
-import json
-from config.connection import get_client
+from config.connection import get_client, load_config
 from utils.convert_cvs import csv_to_iam_users
 from utils.iam.create_user_group import create_user_group
 from utils.iam.add_user_group import add_users_to_group
@@ -21,11 +20,9 @@ def create_users(
     config_file: str = "config/config.json"
 ):
     client = get_client(config_file)
-
-    with open(config_file, "r", encoding="utf-8") as f:
-        config = json.load(f)
-
+    config = load_config(config_file)
     domain_id = config["domain_id"]
+
     users = csv_to_iam_users(csv_file)
     created_usernames = []
 
@@ -66,29 +63,14 @@ def create_users(
     add_users_to_group(created_usernames, group_name, config_file=config_file)
     grant_group_role(group_name, config_file=config_file)
 
-    vpc = create_vpc(
-        vpc_name=group_name,
-        cidr="10.0.0.0/16",
-        config_file=config_file
-    )
-
+    vpc = create_vpc(vpc_name=group_name, cidr="10.0.0.0/16", config_file=config_file)
     if not vpc:
         print("[AVISO] No se pudo crear el VPC. Se omiten subnets y ECS.")
         return
 
-    user_subnets = create_user_subnets(
-        vpc_id=vpc.id,
-        usernames=created_usernames,
-        config_file=config_file
-    )
-
+    user_subnets = create_user_subnets(vpc_id=vpc.id, usernames=created_usernames, config_file=config_file)
     if not user_subnets:
         print("[AVISO] No se crearon subnets. Se omite creación de ECS.")
         return
 
-    create_user_ecs(
-        vpc_id=vpc.id,
-        user_subnets=user_subnets,
-        config_file=config_file
-    )
-
+    create_user_ecs(vpc_id=vpc.id, user_subnets=user_subnets, config_file=config_file)

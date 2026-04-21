@@ -3,22 +3,59 @@ from utils.iam.create_users import create_users
 from utils.iam.enable_users import enable_users
 from utils.iam.disable_users import disable_users
 from utils.delete_all import delete_all, delete_single_user, delete_single_ecs, delete_single_subnet, delete_single_vpc
+from utils.list_resources import (
+    list_groups,
+    list_group_users,
+    list_ecs_for_group,
+    list_ecs_for_user,
+    list_vpcs,
+    list_subnets_for_vpc,
+)
 
-
-MENU = """
+MENU_PRINCIPAL = """
 ==============================
    Huawei Cloud IAM Manager
 ==============================
+1. Crear
+2. Eliminar
+3. Listar
+------------------------------
+0. Salir
+------------------------------
+Selecciona una opcion: """
+
+MENU_CREAR = """
+--- Crear --------------------
 1. Crear usuarios desde CSV
 2. Habilitar usuarios desde CSV
 3. Deshabilitar usuarios desde CSV
-4. Eliminar grupo y sus recursos
---- Eliminacion individual ---
-5. Eliminar usuario individual
-6. Eliminar ECS individual
-7. Eliminar Subnet individual
-8. Eliminar VPC individual
-0. Salir
+------------------------------
+0. Volver
+------------------------------
+Selecciona una opcion: """
+
+MENU_ELIMINAR = """
+--- Eliminar -----------------
+1. Eliminar grupo y sus recursos
+2. Eliminar usuario individual
+3. Eliminar ECS individual
+4. Eliminar Subnet individual
+5. Eliminar VPC individual
+------------------------------
+0. Volver
+------------------------------
+Selecciona una opcion: """
+
+MENU_LISTAR = """
+--- Listar -------------------
+1. Listar grupos IAM
+2. Listar usuarios de un grupo
+3. Listar ECS de un grupo
+4. Listar ECS de un usuario
+5. Listar VPCs
+6. Listar Subnets de una VPC
+------------------------------
+0. Volver
 ------------------------------
 Selecciona una opcion: """
 
@@ -31,11 +68,13 @@ def pedir_csv():
     return csv_file
 
 
+# --- Handlers de Crear ---
+
 def menu_crear_usuarios():
     csv_file = pedir_csv()
     if not csv_file:
         return
-    group_name = input("Nombre del grupo a crear al finalizar: ").strip()
+    group_name = input("Nombre del grupo a crear al finalizar (Enter para omitir): ").strip()
     if not group_name:
         print("[AVISO] No ingresaste nombre de grupo. Solo se crearan los usuarios.")
         create_users(csv_file)
@@ -55,6 +94,8 @@ def menu_deshabilitar_usuarios():
         disable_users(csv_file)
 
 
+# --- Handlers de Eliminar ---
+
 def menu_eliminar_grupo():
     group_name = input("Nombre del grupo a eliminar (y todos sus recursos): ").strip()
     if not group_name:
@@ -72,7 +113,7 @@ def menu_eliminar_usuario():
     if not username:
         print("[AVISO] No ingresaste nombre de usuario.")
         return
-    group_name = input("Nombre del grupo al que pertenece (dejar vacio si no aplica): ").strip()
+    group_name = input("Nombre del grupo al que pertenece (Enter para omitir): ").strip()
     confirm = input(f"Esto eliminara al usuario '{username}' y sus ECS. Confirmar? (s/n): ").strip().lower()
     if confirm != "s":
         print("[AVISO] Operacion cancelada.")
@@ -120,25 +161,102 @@ def menu_eliminar_vpc():
     delete_single_vpc(vpc_name)
 
 
-OPTIONS = {
+# --- Handlers de Listar ---
+
+def menu_listar_grupos():
+    list_groups()
+
+
+def menu_listar_usuarios_grupo():
+    group_name = input("Nombre del grupo: ").strip()
+    if not group_name:
+        print("[AVISO] No ingresaste nombre de grupo.")
+        return
+    list_group_users(group_name)
+
+
+def menu_listar_ecs_grupo():
+    group_name = input("Nombre del grupo: ").strip()
+    if not group_name:
+        print("[AVISO] No ingresaste nombre de grupo.")
+        return
+    list_ecs_for_group(group_name)
+
+
+def menu_listar_ecs_usuario():
+    username = input("Nombre del usuario: ").strip()
+    if not username:
+        print("[AVISO] No ingresaste nombre de usuario.")
+        return
+    list_ecs_for_user(username)
+
+
+def menu_listar_vpcs():
+    list_vpcs()
+
+
+def menu_listar_subnets():
+    vpc_name = input("Nombre de la VPC: ").strip()
+    if not vpc_name:
+        print("[AVISO] No ingresaste nombre de VPC.")
+        return
+    list_subnets_for_vpc(vpc_name)
+
+
+# --- Submenus ---
+
+OPCIONES_CREAR = {
     "1": menu_crear_usuarios,
     "2": menu_habilitar_usuarios,
     "3": menu_deshabilitar_usuarios,
-    "4": menu_eliminar_grupo,
-    "5": menu_eliminar_usuario,
-    "6": menu_eliminar_ecs,
-    "7": menu_eliminar_subnet,
-    "8": menu_eliminar_vpc,
+}
+
+OPCIONES_ELIMINAR = {
+    "1": menu_eliminar_grupo,
+    "2": menu_eliminar_usuario,
+    "3": menu_eliminar_ecs,
+    "4": menu_eliminar_subnet,
+    "5": menu_eliminar_vpc,
+}
+
+OPCIONES_LISTAR = {
+    "1": menu_listar_grupos,
+    "2": menu_listar_usuarios_grupo,
+    "3": menu_listar_ecs_grupo,
+    "4": menu_listar_ecs_usuario,
+    "5": menu_listar_vpcs,
+    "6": menu_listar_subnets,
+}
+
+
+def submenu(prompt: str, opciones: dict):
+    while True:
+        opcion = input(prompt).strip()
+        if opcion == "0":
+            return
+        action = opciones.get(opcion)
+        if action:
+            action()
+        else:
+            print("[AVISO] Opcion no valida, intenta de nuevo.")
+
+
+# --- Menu principal ---
+
+OPCIONES_PRINCIPAL = {
+    "1": lambda: submenu(MENU_CREAR, OPCIONES_CREAR),
+    "2": lambda: submenu(MENU_ELIMINAR, OPCIONES_ELIMINAR),
+    "3": lambda: submenu(MENU_LISTAR, OPCIONES_LISTAR),
 }
 
 
 def main():
     while True:
-        opcion = input(MENU).strip()
+        opcion = input(MENU_PRINCIPAL).strip()
         if opcion == "0":
             print("Saliendo...")
             sys.exit(0)
-        action = OPTIONS.get(opcion)
+        action = OPCIONES_PRINCIPAL.get(opcion)
         if action:
             action()
         else:
