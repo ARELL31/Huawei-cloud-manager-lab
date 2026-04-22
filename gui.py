@@ -5,6 +5,7 @@ import wx
 from utils.iam.create_users import create_users
 from utils.iam.enable_users import enable_users
 from utils.iam.disable_users import disable_users
+from utils.iam.helpers import read_usernames
 from utils.delete_all import (
     delete_all, delete_single_user, delete_single_ecs,
     delete_single_subnet, delete_single_vpc,
@@ -15,6 +16,11 @@ from utils.list_resources import (
     list_vpcs, list_subnets_for_vpc,
 )
 from utils.csv_validator import get_validation_report
+
+
+# ---------------------------------------------------------------------------
+# Stdout → log panel
+# ---------------------------------------------------------------------------
 
 class LogRedirector:
     _COLORS = {
@@ -46,10 +52,14 @@ class LogRedirector:
     def flush(self):
         pass
 
+
+# ---------------------------------------------------------------------------
+# Helpers compartidos
+# ---------------------------------------------------------------------------
+
 def _field(parent, label, hint=""):
     row = wx.BoxSizer(wx.HORIZONTAL)
     lbl = wx.StaticText(parent, label=label, size=(90, -1))
-    lbl.SetFont(lbl.GetFont())
     ctrl = wx.TextCtrl(parent, size=(340, -1))
     if hint:
         ctrl.SetHint(hint)
@@ -67,10 +77,81 @@ def _confirm(parent, msg: str) -> bool:
 
 
 def _run(func):
-    t = threading.Thread(target=func, daemon=True)
-    t.start()
+    threading.Thread(target=func, daemon=True).start()
 
-class CreatePanel(wx.ScrolledWindow):
+
+# ---------------------------------------------------------------------------
+# Mixin de progreso — reutilizado por los tres paneles
+# ---------------------------------------------------------------------------
+
+class ProgressMixin:
+    """
+    Añade gauge + etiqueta de progreso a cualquier panel.
+    Llama a _init_progress(sizer) en _build() para insertar los widgets.
+    """
+
+    def _init_progress(self, parent_sizer: wx.BoxSizer):
+        row = wx.BoxSizer(wx.HORIZONTAL)
+
+        self._lbl_step = wx.StaticText(self, label="", size=(260, -1))
+        self._gauge = wx.Gauge(self, style=wx.GA_HORIZONTAL | wx.GA_SMOOTH)
+
+        row.Add(self._lbl_step, flag=wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, border=8)
+        row.Add(self._gauge, proportion=1, flag=wx.ALIGN_CENTER_VERTICAL)
+
+        self._progress_row = row
+        parent_sizer.Add(row, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, border=12)
+
+        self._pulse_timer = wx.Timer(self)
+        self.Bind(wx.EVT_TIMER, lambda _: self._gauge.Pulse(), self._pulse_timer)
+
+        self._hide_progress()
+
+    # ── API pública ──────────────────────────────────────────────────────────
+
+    def start_pulse(self, label: str = ""):
+        """Gauge indeterminado (pasos desconocidos)."""
+        self._gauge.SetRange(100)
+        self._lbl_step.SetLabel(label)
+        self._show_progress()
+        self._pulse_timer.Start(80)
+
+    def start_gauge(self, total: int, label: str = ""):
+        """Gauge determinado con rango conocido."""
+        self._pulse_timer.Stop()
+        self._gauge.SetRange(total)
+        self._gauge.SetValue(0)
+        self._lbl_step.SetLabel(label)
+        self._show_progress()
+
+    def update_gauge(self, value: int, label: str = ""):
+        self._gauge.SetValue(value)
+        if label:
+            self._lbl_step.SetLabel(label)
+
+    def stop_progress(self):
+        self._pulse_timer.Stop()
+        self._gauge.SetValue(0)
+        self._hide_progress()
+
+    # ── internos ─────────────────────────────────────────────────────────────
+
+    def _show_progress(self):
+        self._lbl_step.Show()
+        self._gauge.Show()
+        self.Layout()
+
+    def _hide_progress(self):
+        self._lbl_step.Hide()
+        self._gauge.Hide()
+        self.Layout()
+
+
+# ---------------------------------------------------------------------------
+# Pestaña Crear
+# ---------------------------------------------------------------------------
+
+class CreatePanel(ProgressMixin, wx.ScrolledWindow):
     def __init__(self, parent):
         super().__init__(parent)
         self.SetScrollRate(0, 12)
@@ -79,6 +160,7 @@ class CreatePanel(wx.ScrolledWindow):
     def _build(self):
         root = wx.BoxSizer(wx.VERTICAL)
 
+        # ── Crear usuarios ──────────────────────────────────────────────────
         box1 = wx.StaticBox(self, label=" Crear Usuarios desde CSV ")
         s1 = wx.StaticBoxSizer(box1, wx.VERTICAL)
 
@@ -102,6 +184,7 @@ class CreatePanel(wx.ScrolledWindow):
         s1.Add(self.btn_create, flag=wx.ALIGN_RIGHT | wx.ALL, border=8)
         root.Add(s1, flag=wx.EXPAND | wx.ALL, border=12)
 
+        # ── Habilitar / Deshabilitar ────────────────────────────────────────
         box2 = wx.StaticBox(self, label=" Cambiar Estado de Usuarios ")
         s2 = wx.StaticBoxSizer(box2, wx.VERTICAL)
 
@@ -127,7 +210,10 @@ class CreatePanel(wx.ScrolledWindow):
         s2.Add(btn_row, flag=wx.ALIGN_RIGHT | wx.ALL, border=8)
         root.Add(s2, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, border=12)
 
+        self._init_progress(root)
         self.SetSizer(root)
+
+    # ── helpers ─────────────────────────────────────────────────────────────
 
     def _all_buttons(self):
         return (self.btn_create, self.btn_enable, self.btn_disable)
@@ -144,72 +230,117 @@ class CreatePanel(wx.ScrolledWindow):
             return None
         return path
 
-    def _validate_and_confirm(self, csv_file: str) -> bool:
+    def _validate_and_confirm(self, csv_file: str):
+        """Valida el CSV y pide confirmación si hay advertencias.
+        Retorna el reporte si se puede continuar, None si no."""
         report = get_validation_report(csv_file)
         if report is None:
-            return False
+            return None
         if not report["users"]:
             wx.MessageBox("El CSV está vacío o no tiene filas de datos.",
                           "Error", wx.OK | wx.ICON_ERROR, self)
-            return False
+            return None
         if report["errors"]:
             msg = "Errores críticos — el CSV no puede procesarse:\n\n"
             msg += "\n".join(f"  • {e}" for e in report["errors"])
             wx.MessageBox(msg, "Errores en el CSV", wx.OK | wx.ICON_ERROR, self)
-            return False
+            return None
         if report["warnings"]:
             msg = "Se encontraron advertencias:\n\n"
             msg += "\n".join(f"  • {w}" for w in report["warnings"])
             msg += "\n\n¿Deseas continuar de todas formas?"
             if not _confirm(self, msg):
-                return False
-        return True
+                return None
+        return report
+
+    # ── acciones ─────────────────────────────────────────────────────────────
+
+    _PHASE_LABELS = {
+        "iam":    "Creando usuarios IAM",
+        "subnet": "Creando subnets",
+        "ecs":    "Creando instancias ECS",
+    }
 
     def on_create(self, event):
         csv_file = self._get_csv(self.csv_create)
         if not csv_file:
             return
-        if not self._validate_and_confirm(csv_file):
+        report = self._validate_and_confirm(csv_file)
+        if report is None:
             return
+
+        n = len(report["users"])
         group_name = self.grp_create.GetValue().strip() or None
         self._busy(True)
 
+        # 3 fases × N usuarios = rango total del gauge
+        phases = ["iam", "subnet", "ecs"] if group_name else ["iam"]
+        self.start_gauge(n * len(phases), f"Iniciando...  0/{n}")
+
+        _phase_offsets = {p: i * n for i, p in enumerate(phases)}
+
+        def progress(phase, current, total):
+            if phase not in _phase_offsets:
+                return
+            value = _phase_offsets[phase] + current
+            label = f"{self._PHASE_LABELS[phase]}  {current}/{total}"
+            wx.CallAfter(self.update_gauge, value, label)
+
         def task():
             print(f"\n[INICIO] Creando usuarios desde '{csv_file}'...")
-            create_users(csv_file, group_name=group_name)
+            create_users(csv_file, group_name=group_name, on_progress=progress)
+            wx.CallAfter(self.stop_progress)
             wx.CallAfter(self._busy, False)
 
         _run(task)
 
     def on_enable(self, event):
-        csv_file = self._get_csv(self.csv_toggle)
-        if not csv_file:
-            return
-        self._busy(True)
-
-        def task():
-            print(f"\n[INICIO] Habilitando usuarios...")
-            enable_users(csv_file)
-            wx.CallAfter(self._busy, False)
-
-        _run(task)
+        self._toggle_users(enable=True)
 
     def on_disable(self, event):
+        self._toggle_users(enable=False)
+
+    def _toggle_users(self, enable: bool):
         csv_file = self._get_csv(self.csv_toggle)
         if not csv_file:
             return
+
+        try:
+            usernames = read_usernames(csv_file)
+            n = len(usernames)
+        except Exception:
+            n = 0
+
+        verb = "Habilitando" if enable else "Deshabilitando"
+        action = enable_users if enable else disable_users
         self._busy(True)
 
+        if n > 0:
+            self.start_gauge(n, f"{verb} usuarios  0/{n}")
+        else:
+            self.start_pulse(f"{verb} usuarios...")
+
+        def progress(current, total):
+            wx.CallAfter(self.update_gauge, current,
+                         f"{verb} usuarios  {current}/{total}")
+
         def task():
-            print(f"\n[INICIO] Deshabilitando usuarios...")
-            disable_users(csv_file)
+            print(f"\n[INICIO] {verb} usuarios...")
+            action(csv_file, on_progress=progress if n > 0 else None)
+            wx.CallAfter(self.stop_progress)
             wx.CallAfter(self._busy, False)
 
         _run(task)
+
+
+# ---------------------------------------------------------------------------
+# Pestaña Eliminar
+# ---------------------------------------------------------------------------
 
 RESOURCE_TYPES = ["Usuario", "ECS", "Subnet", "VPC"]
 
-class DeletePanel(wx.ScrolledWindow):
+
+class DeletePanel(ProgressMixin, wx.ScrolledWindow):
     def __init__(self, parent):
         super().__init__(parent)
         self.SetScrollRate(0, 12)
@@ -218,6 +349,7 @@ class DeletePanel(wx.ScrolledWindow):
     def _build(self):
         root = wx.BoxSizer(wx.VERTICAL)
 
+        # ── Eliminar grupo ──────────────────────────────────────────────────
         box1 = wx.StaticBox(self, label=" Eliminar Grupo y Todos sus Recursos ")
         s1 = wx.StaticBoxSizer(box1, wx.VERTICAL)
 
@@ -230,6 +362,7 @@ class DeletePanel(wx.ScrolledWindow):
         s1.Add(self.btn_del_group, flag=wx.ALIGN_RIGHT | wx.ALL, border=8)
         root.Add(s1, flag=wx.EXPAND | wx.ALL, border=12)
 
+        # ── Eliminar individual ─────────────────────────────────────────────
         box2 = wx.StaticBox(self, label=" Eliminar Recurso Individual ")
         s2 = wx.StaticBoxSizer(box2, wx.VERTICAL)
 
@@ -245,10 +378,10 @@ class DeletePanel(wx.ScrolledWindow):
         row_name, self.res_name = _field(self, "Nombre:", "Nombre del recurso")
         s2.Add(row_name, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, border=8)
 
-        row_extra, self.res_extra = _field(self, "Grupo / VPC:", "Grupo (usuario) o VPC (subnet)")
+        row_extra, self.res_extra = _field(self, "Grupo / VPC:", "")
         s2.Add(row_extra, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, border=8)
-        self._row_extra_sizer = row_extra
-        self._row_extra_widgets = row_extra.GetChildren()
+        self._extra_label = row_extra.GetItem(0).GetWindow()
+        self._extra_field = self.res_extra
 
         self.btn_del_ind = wx.Button(self, label="Eliminar recurso")
         self.btn_del_ind.SetForegroundColour(wx.Colour(160, 0, 0))
@@ -256,8 +389,7 @@ class DeletePanel(wx.ScrolledWindow):
         s2.Add(self.btn_del_ind, flag=wx.ALIGN_RIGHT | wx.ALL, border=8)
         root.Add(s2, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, border=12)
 
-        self._extra_label = row_extra.GetItem(0).GetWindow()
-        self._extra_field = self.res_extra
+        self._init_progress(root)
         self.SetSizer(root)
         self._on_type_change(None)
 
@@ -290,10 +422,12 @@ class DeletePanel(wx.ScrolledWindow):
         if not _confirm(self, msg):
             return
         self._busy(True)
+        self.start_pulse(f"Eliminando grupo '{name}'...")
 
         def task():
             print(f"\n[INICIO] Eliminando grupo '{name}' y sus recursos...")
             delete_all(name)
+            wx.CallAfter(self.stop_progress)
             wx.CallAfter(self._busy, False)
 
         _run(task)
@@ -314,6 +448,7 @@ class DeletePanel(wx.ScrolledWindow):
         if not _confirm(self, f"¿Eliminar {tipo} '{name}'? Esta acción no se puede deshacer."):
             return
         self._busy(True)
+        self.start_pulse(f"Eliminando {tipo} '{name}'...")
 
         def task():
             print(f"\n[INICIO] Eliminando {tipo} '{name}'...")
@@ -325,9 +460,15 @@ class DeletePanel(wx.ScrolledWindow):
                 delete_single_subnet(name, extra)
             elif tipo == "VPC":
                 delete_single_vpc(name)
+            wx.CallAfter(self.stop_progress)
             wx.CallAfter(self._busy, False)
 
         _run(task)
+
+
+# ---------------------------------------------------------------------------
+# Pestaña Listar
+# ---------------------------------------------------------------------------
 
 LIST_OPTIONS = [
     "Grupos IAM",
@@ -355,7 +496,7 @@ _NEEDS_FILTER = {
 }
 
 
-class ListPanel(wx.Panel):
+class ListPanel(ProgressMixin, wx.Panel):
     def __init__(self, parent):
         super().__init__(parent)
         self._build()
@@ -363,6 +504,7 @@ class ListPanel(wx.Panel):
     def _build(self):
         root = wx.BoxSizer(wx.VERTICAL)
 
+        # ── Controles ───────────────────────────────────────────────────────
         box = wx.StaticBox(self, label=" Consulta ")
         sctrl = wx.StaticBoxSizer(box, wx.VERTICAL)
 
@@ -384,6 +526,7 @@ class ListPanel(wx.Panel):
         sctrl.Add(self.btn_list, flag=wx.ALIGN_RIGHT | wx.ALL, border=8)
         root.Add(sctrl, flag=wx.EXPAND | wx.ALL, border=12)
 
+        # ── Resultados ──────────────────────────────────────────────────────
         res_box = wx.StaticBox(self, label=" Resultados ")
         sres = wx.StaticBoxSizer(res_box, wx.VERTICAL)
 
@@ -395,8 +538,9 @@ class ListPanel(wx.Panel):
         self.lbl_count = wx.StaticText(self, label="")
         sres.Add(self.lbl_count, flag=wx.LEFT | wx.BOTTOM, border=6)
 
-        root.Add(sres, proportion=1, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, border=12)
+        root.Add(sres, proportion=1, flag=wx.EXPAND | wx.LEFT | wx.RIGHT, border=12)
 
+        self._init_progress(root)
         self.SetSizer(root)
         self._on_choice(None)
 
@@ -451,6 +595,7 @@ class ListPanel(wx.Panel):
         self.btn_list.Disable()
         self.list_ctrl.ClearAll()
         self.lbl_count.SetLabel("Consultando...")
+        self.start_pulse(f"Consultando {opcion.lower()}...")
 
         def task():
             print(f"\n[CONSULTA] {opcion}" + (f": {filtro}" if filtro else ""))
@@ -467,18 +612,24 @@ class ListPanel(wx.Panel):
                 items = list_vpcs()
             elif opcion == "Subnets de una VPC":
                 items = list_subnets_for_vpc(filtro)
+            wx.CallAfter(self.stop_progress)
             wx.CallAfter(self._populate, opcion, items)
             wx.CallAfter(self.btn_list.Enable)
 
         _run(task)
 
+
+# ---------------------------------------------------------------------------
+# Ventana principal
+# ---------------------------------------------------------------------------
+
 class MainFrame(wx.Frame):
     def __init__(self):
-        super().__init__(None, title="Huawei Cloud Computer Laboratory",
+        super().__init__(None, title="Huawei Cloud IAM Manager",
                          size=(920, 720), style=wx.DEFAULT_FRAME_STYLE)
         self.SetMinSize((780, 580))
         self._build()
-        self._redirect()
+        sys.stdout = LogRedirector(self.log)
         self.Centre()
         self.Show()
 
@@ -512,15 +663,16 @@ class MainFrame(wx.Frame):
 
         panel.SetSizer(root)
         self.CreateStatusBar().SetStatusText("Listo")
-
         self.Bind(wx.EVT_CLOSE, self._on_close)
-
-    def _redirect(self):
-        sys.stdout = LogRedirector(self.log)
 
     def _on_close(self, event):
         sys.stdout = sys.__stdout__
         event.Skip()
+
+
+# ---------------------------------------------------------------------------
+# Punto de entrada
+# ---------------------------------------------------------------------------
 
 def main():
     app = wx.App(False)

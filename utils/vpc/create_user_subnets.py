@@ -10,10 +10,12 @@ from huaweicloudsdkvpc.v2 import (
 def create_user_subnets(
     vpc_id: str,
     usernames: list[str],
-    config_file: str = "config/config.json"
+    config_file: str = "config/config.json",
+    on_progress=None,           # on_progress(current: int, total: int)
 ) -> dict:
     client = get_vpc_client(config_file)
     user_subnets = {}
+    total = len(usernames)
 
     for index, username in enumerate(usernames, start=1):
         subnet_cidr = f"10.0.{index}.0/24"
@@ -37,5 +39,8 @@ def create_user_subnets(
 
         except exceptions.ClientRequestException as e:
             print(f"[ERROR] Subnet para {username}: {e.error_msg}")
+
+        if on_progress:
+            on_progress(index, total)
 
     return user_subnets
