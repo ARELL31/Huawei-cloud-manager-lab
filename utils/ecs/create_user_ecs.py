@@ -16,9 +16,16 @@ def create_user_ecs(
     vpc_id: str,
     user_subnets: dict,
     config_file: str = "config/config.json"
-):
+) -> dict:
+    """
+    Crea una ECS por usuario.
+    Retorna {'created': [username, ...], 'failed': [username, ...]}.
+    """
     client = get_ecs_client(config_file)
     ecs_config = load_config(config_file)["ecs"]
+
+    created = []
+    failed = []
 
     for username, subnet_id in user_subnets.items():
         try:
@@ -52,6 +59,10 @@ def create_user_ecs(
 
             response = client.create_servers(request)
             print(f"[OK] ECS creada para {username}: {response.server_ids}")
+            created.append(username)
 
         except exceptions.ClientRequestException as e:
             print(f"[ERROR] ECS para {username}: {e.error_msg} (código: {e.status_code})")
+            failed.append(username)
+
+    return {"created": created, "failed": failed}
