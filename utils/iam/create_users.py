@@ -73,7 +73,8 @@ def _print_summary(
 def create_users(
     csv_file: str,
     group_name: str = None,
-    config_file: str = "config/config.json"
+    config_file: str = "config/config.json",
+    on_progress=None,           # on_progress(phase: str, current: int, total: int)
 ):
     client = get_client(config_file)
     config = load_config(config_file)
@@ -81,11 +82,17 @@ def create_users(
 
     users = csv_to_iam_users(csv_file)
     all_usernames = [u["name"] for u in users]
+    total_users = len(users)
+
+    def _phase_cb(phase):
+        if on_progress is None:
+            return None
+        return lambda current, total: on_progress(phase, current, total)
 
     iam_created = []
     iam_failed = []
 
-    for user in users:
+    for i, user in enumerate(users, start=1):
         try:
             request = CreateUserRequest()
             userbody = CreateUserOption(
@@ -107,6 +114,9 @@ def create_users(
         except exceptions.ClientRequestException as e:
             print(f"[ERROR] {user['name']}: {e.error_msg}")
             iam_failed.append(user["name"])
+
+        if on_progress:
+            on_progress("iam", i, total_users)
 
     if not group_name:
         _print_summary(all_usernames, iam_created, iam_failed,
@@ -139,7 +149,8 @@ def create_users(
     subnets_created = create_user_subnets(
         vpc_id=vpc.id,
         usernames=iam_created,
-        config_file=config_file
+        config_file=config_file,
+        on_progress=_phase_cb("subnet"),
     )
 
     if not subnets_created:
@@ -151,7 +162,8 @@ def create_users(
     ecs_report = create_user_ecs(
         vpc_id=vpc.id,
         user_subnets=subnets_created,
-        config_file=config_file
+        config_file=config_file,
+        on_progress=_phase_cb("ecs"),
     )
 
     _print_summary(all_usernames, iam_created, iam_failed,

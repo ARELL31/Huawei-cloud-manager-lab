@@ -45,7 +45,12 @@ def find_group_id(client, group_name: str) -> str | None:
     return None
 
 
-def set_users_enabled(csv_file: str, enabled: bool, config_file: str = "config/config.json"):
+def set_users_enabled(
+    csv_file: str,
+    enabled: bool,
+    config_file: str = "config/config.json",
+    on_progress=None,           # on_progress(current: int, total: int)
+):
     client = get_client(config_file)
     usernames = read_usernames(csv_file)
 
@@ -54,8 +59,9 @@ def set_users_enabled(csv_file: str, enabled: bool, config_file: str = "config/c
         return
 
     estado = "habilitado" if enabled else "deshabilitado"
+    total = len(usernames)
 
-    for username in usernames:
+    for i, username in enumerate(usernames, start=1):
         try:
             user_id = find_user_id(client, username)
             if not user_id:
@@ -71,3 +77,6 @@ def set_users_enabled(csv_file: str, enabled: bool, config_file: str = "config/c
 
         except exceptions.ClientRequestException as e:
             print(f"[ERROR] {username}: {e.error_msg}")
+
+        if on_progress:
+            on_progress(i, total)
