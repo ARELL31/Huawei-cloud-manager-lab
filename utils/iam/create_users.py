@@ -18,20 +18,18 @@ def _print_summary(
     all_usernames: list[str],
     iam_created: list[str],
     iam_failed: list[str],
-    subnets_created: dict,       # {username: subnet_id}
-    ecs_report: dict | None,     # {'created': [...], 'failed': [...]} o None si no se llegó
+    subnets_created: dict,
+    ecs_report: dict | None,
 ):
     LINE = "─" * 54
     print(f"\n{'═' * 54}")
     print("[RESUMEN] Resultado de la operación")
     print(LINE)
 
-    # IAM
     iam_skip = len(all_usernames) - len(iam_created) - len(iam_failed)
     print(f"  Usuarios IAM : {len(iam_created):>3} creados  "
           f"{len(iam_failed):>3} fallaron  {iam_skip:>3} omitidos")
 
-    # Subnets
     if subnets_created is not None:
         subnets_failed_names = [u for u in iam_created if u not in subnets_created]
         print(f"  Subnets      : {len(subnets_created):>3} creadas   "
@@ -39,14 +37,12 @@ def _print_summary(
     else:
         print("  Subnets      :   — (no se intentó)")
 
-    # ECS
     if ecs_report is not None:
         print(f"  ECS          : {len(ecs_report['created']):>3} creadas   "
               f"{len(ecs_report['failed']):>3} fallaron")
     else:
         print("  ECS          :   — (no se intentó)")
 
-    # Recursos huérfanos
     orphaned = []
     if ecs_report and subnets_created:
         for username in ecs_report["failed"]:
@@ -74,7 +70,7 @@ def create_users(
     csv_file: str,
     group_name: str = None,
     config_file: str = "config/config.json",
-    on_progress=None,           # on_progress(phase: str, current: int, total: int)
+    on_progress=None,
 ):
     client = get_client(config_file)
     config = load_config(config_file)

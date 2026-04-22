@@ -49,7 +49,7 @@ def set_users_enabled(
     csv_file: str,
     enabled: bool,
     config_file: str = "config/config.json",
-    on_progress=None,           # on_progress(current: int, total: int)
+    on_progress=None,
 ):
     client = get_client(config_file)
     usernames = read_usernames(csv_file)

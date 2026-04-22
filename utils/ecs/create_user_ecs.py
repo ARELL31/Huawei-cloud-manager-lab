@@ -16,12 +16,8 @@ def create_user_ecs(
     vpc_id: str,
     user_subnets: dict,
     config_file: str = "config/config.json",
-    on_progress=None,           # on_progress(current: int, total: int)
+    on_progress=None,
 ) -> dict:
-    """
-    Crea una ECS por usuario.
-    Retorna {'created': [username, ...], 'failed': [username, ...]}.
-    """
     client = get_ecs_client(config_file)
     ecs_config = load_config(config_file)["ecs"]
 

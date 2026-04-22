@@ -1,3 +1,5 @@
+import json
+import os
 import sys
 import threading
 import wx
@@ -17,10 +19,6 @@ from utils.list_resources import (
 )
 from utils.csv_validator import get_validation_report
 
-
-# ---------------------------------------------------------------------------
-# Stdout → log panel
-# ---------------------------------------------------------------------------
 
 class LogRedirector:
     _COLORS = {
@@ -53,10 +51,6 @@ class LogRedirector:
         pass
 
 
-# ---------------------------------------------------------------------------
-# Helpers compartidos
-# ---------------------------------------------------------------------------
-
 def _field(parent, label, hint=""):
     row = wx.BoxSizer(wx.HORIZONTAL)
     lbl = wx.StaticText(parent, label=label, size=(90, -1))
@@ -80,16 +74,7 @@ def _run(func):
     threading.Thread(target=func, daemon=True).start()
 
 
-# ---------------------------------------------------------------------------
-# Mixin de progreso — reutilizado por los tres paneles
-# ---------------------------------------------------------------------------
-
 class ProgressMixin:
-    """
-    Añade gauge + etiqueta de progreso a cualquier panel.
-    Llama a _init_progress(sizer) en _build() para insertar los widgets.
-    """
-
     def _init_progress(self, parent_sizer: wx.BoxSizer):
         row = wx.BoxSizer(wx.HORIZONTAL)
 
@@ -107,17 +92,13 @@ class ProgressMixin:
 
         self._hide_progress()
 
-    # ── API pública ──────────────────────────────────────────────────────────
-
     def start_pulse(self, label: str = ""):
-        """Gauge indeterminado (pasos desconocidos)."""
         self._gauge.SetRange(100)
         self._lbl_step.SetLabel(label)
         self._show_progress()
         self._pulse_timer.Start(80)
 
     def start_gauge(self, total: int, label: str = ""):
-        """Gauge determinado con rango conocido."""
         self._pulse_timer.Stop()
         self._gauge.SetRange(total)
         self._gauge.SetValue(0)
@@ -134,8 +115,6 @@ class ProgressMixin:
         self._gauge.SetValue(0)
         self._hide_progress()
 
-    # ── internos ─────────────────────────────────────────────────────────────
-
     def _show_progress(self):
         self._lbl_step.Show()
         self._gauge.Show()
@@ -147,9 +126,196 @@ class ProgressMixin:
         self.Layout()
 
 
-# ---------------------------------------------------------------------------
-# Pestaña Crear
-# ---------------------------------------------------------------------------
+class SecretCtrl(wx.Panel):
+    def __init__(self, parent, hint: str = ""):
+        super().__init__(parent)
+        sizer = wx.BoxSizer(wx.HORIZONTAL)
+
+        self._masked = wx.TextCtrl(self, style=wx.TE_PASSWORD)
+        self._plain = wx.TextCtrl(self)
+        if hint:
+            self._masked.SetHint(hint)
+            self._plain.SetHint(hint)
+        self._plain.Hide()
+
+        self._btn = wx.Button(self, label="Mostrar", size=(70, -1))
+        self._btn.Bind(wx.EVT_BUTTON, self._on_toggle)
+
+        sizer.Add(self._masked, proportion=1, flag=wx.EXPAND | wx.RIGHT, border=4)
+        sizer.Add(self._plain,  proportion=1, flag=wx.EXPAND | wx.RIGHT, border=4)
+        sizer.Add(self._btn, flag=wx.ALIGN_CENTER_VERTICAL)
+        self.SetSizer(sizer)
+
+    def _on_toggle(self, event):
+        if self._plain.IsShown():
+            self._masked.SetValue(self._plain.GetValue())
+            self._plain.Hide()
+            self._masked.Show()
+            self._btn.SetLabel("Mostrar")
+        else:
+            self._plain.SetValue(self._masked.GetValue())
+            self._masked.Hide()
+            self._plain.Show()
+            self._btn.SetLabel("Ocultar")
+        self.Layout()
+        self.GetParent().Layout()
+
+    def GetValue(self) -> str:
+        return self._plain.GetValue() if self._plain.IsShown() else self._masked.GetValue()
+
+    def SetValue(self, value: str):
+        self._masked.SetValue(value)
+        self._plain.SetValue(value)
+
+
+def _secret_row(parent, label: str, hint: str = ""):
+    row = wx.BoxSizer(wx.HORIZONTAL)
+    lbl = wx.StaticText(parent, label=label, size=(90, -1))
+    ctrl = SecretCtrl(parent, hint=hint)
+    row.Add(lbl, flag=wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, border=6)
+    row.Add(ctrl, proportion=1, flag=wx.EXPAND)
+    return row, ctrl
+
+
+class ConfigPanel(wx.ScrolledWindow):
+    _CONFIG_FILE = "config/config.json"
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.SetScrollRate(0, 12)
+        self._build()
+        self._load()
+
+    def _build(self):
+        root = wx.BoxSizer(wx.VERTICAL)
+
+        box1 = wx.StaticBox(self, label=" Credenciales de Acceso ")
+        s1 = wx.StaticBoxSizer(box1, wx.VERTICAL)
+
+        row_ak, self.fld_ak = _field(self, "Access Key:", "AK — identificador de acceso")
+        s1.Add(row_ak, flag=wx.EXPAND | wx.ALL, border=8)
+
+        row_sk, self.fld_sk = _secret_row(self, "Secret Key:", "SK — se guarda en config.json")
+        s1.Add(row_sk, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, border=8)
+
+        root.Add(s1, flag=wx.EXPAND | wx.ALL, border=12)
+
+        box2 = wx.StaticBox(self, label=" Identificadores de Proyecto ")
+        s2 = wx.StaticBoxSizer(box2, wx.VERTICAL)
+
+        row_did, self.fld_domain_id = _field(self, "Domain ID:", "ID del dominio raíz")
+        s2.Add(row_did, flag=wx.EXPAND | wx.ALL, border=8)
+
+        row_pid, self.fld_project_id = _field(self, "Project ID:", "ID del proyecto regional")
+        s2.Add(row_pid, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, border=8)
+
+        row_reg, self.fld_region = _field(self, "Región:", "ej. la-north-2")
+        s2.Add(row_reg, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, border=8)
+
+        root.Add(s2, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, border=12)
+
+        box3 = wx.StaticBox(self, label=" Configuración de ECS ")
+        s3 = wx.StaticBoxSizer(box3, wx.VERTICAL)
+
+        row_img, self.fld_image_ref = _field(self, "Image Ref:", "ID de la imagen base")
+        s3.Add(row_img, flag=wx.EXPAND | wx.ALL, border=8)
+
+        row_flv, self.fld_flavor_ref = _field(self, "Flavor Ref:", "ej. s6.small.1")
+        s3.Add(row_flv, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, border=8)
+
+        row_vt, self.fld_vol_type = _field(self, "Tipo de disco:", "SSD, SATA, SAS...")
+        s3.Add(row_vt, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, border=8)
+
+        row_vs, self.fld_vol_size = _field(self, "Tamaño (GB):", "ej. 40")
+        s3.Add(row_vs, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, border=8)
+
+        root.Add(s3, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, border=12)
+
+        btn_row = wx.BoxSizer(wx.HORIZONTAL)
+        self.lbl_status = wx.StaticText(self, label="")
+        btn_row.Add(self.lbl_status, proportion=1, flag=wx.ALIGN_CENTER_VERTICAL)
+        btn_save = wx.Button(self, label="Guardar configuración")
+        btn_save.Bind(wx.EVT_BUTTON, self._on_save)
+        btn_row.Add(btn_save)
+        root.Add(btn_row, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, border=12)
+
+        self.SetSizer(root)
+
+    def _load(self):
+        if not os.path.exists(self._CONFIG_FILE):
+            self._set_status(
+                "config.json no encontrado — completa los campos y guarda.",
+                color=(180, 90, 0),
+            )
+            return
+        try:
+            with open(self._CONFIG_FILE, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            self.fld_ak.SetValue(cfg.get("ak", ""))
+            self.fld_sk.SetValue(cfg.get("sk", ""))
+            self.fld_domain_id.SetValue(cfg.get("domain_id", ""))
+            self.fld_project_id.SetValue(cfg.get("project_id", ""))
+            self.fld_region.SetValue(cfg.get("region", ""))
+            ecs = cfg.get("ecs", {})
+            self.fld_image_ref.SetValue(ecs.get("image_ref", ""))
+            self.fld_flavor_ref.SetValue(ecs.get("flavor_ref", ""))
+            self.fld_vol_type.SetValue(ecs.get("root_volume_type", "SSD"))
+            self.fld_vol_size.SetValue(str(ecs.get("root_volume_size", 40)))
+            self._set_status("Configuración cargada.", color=(0, 130, 0))
+        except Exception as e:
+            self._set_status(f"Error al cargar: {e}", color=(180, 0, 0))
+
+    def _on_save(self, _event):
+        required = [
+            ("Access Key",  self.fld_ak),
+            ("Secret Key",  self.fld_sk),
+            ("Domain ID",   self.fld_domain_id),
+            ("Project ID",  self.fld_project_id),
+            ("Región",      self.fld_region),
+            ("Image Ref",   self.fld_image_ref),
+            ("Flavor Ref",  self.fld_flavor_ref),
+        ]
+        for label, fld in required:
+            if not fld.GetValue().strip():
+                wx.MessageBox(f"El campo '{label}' es obligatorio.", "Campo vacío",
+                              wx.OK | wx.ICON_WARNING, self)
+                return
+
+        try:
+            vol_size = int(self.fld_vol_size.GetValue().strip())
+            if vol_size < 10:
+                raise ValueError
+        except ValueError:
+            wx.MessageBox("El tamaño del disco debe ser un número entero ≥ 10.",
+                          "Valor inválido", wx.OK | wx.ICON_WARNING, self)
+            return
+
+        cfg = {
+            "ak":         self.fld_ak.GetValue().strip(),
+            "sk":         self.fld_sk.GetValue().strip(),
+            "domain_id":  self.fld_domain_id.GetValue().strip(),
+            "project_id": self.fld_project_id.GetValue().strip(),
+            "region":     self.fld_region.GetValue().strip(),
+            "ecs": {
+                "image_ref":        self.fld_image_ref.GetValue().strip(),
+                "flavor_ref":       self.fld_flavor_ref.GetValue().strip(),
+                "root_volume_type": self.fld_vol_type.GetValue().strip() or "SSD",
+                "root_volume_size": vol_size,
+            },
+        }
+        os.makedirs(os.path.dirname(self._CONFIG_FILE), exist_ok=True)
+        try:
+            with open(self._CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2, ensure_ascii=False)
+            self._set_status("Configuración guardada correctamente.", color=(0, 130, 0))
+        except Exception as e:
+            self._set_status(f"Error al guardar: {e}", color=(180, 0, 0))
+
+    def _set_status(self, msg: str, color: tuple):
+        self.lbl_status.SetLabel(msg)
+        self.lbl_status.SetForegroundColour(wx.Colour(*color))
+        self.lbl_status.Refresh()
+
 
 class CreatePanel(ProgressMixin, wx.ScrolledWindow):
     def __init__(self, parent):
@@ -160,7 +326,6 @@ class CreatePanel(ProgressMixin, wx.ScrolledWindow):
     def _build(self):
         root = wx.BoxSizer(wx.VERTICAL)
 
-        # ── Crear usuarios ──────────────────────────────────────────────────
         box1 = wx.StaticBox(self, label=" Crear Usuarios desde CSV ")
         s1 = wx.StaticBoxSizer(box1, wx.VERTICAL)
 
@@ -184,7 +349,6 @@ class CreatePanel(ProgressMixin, wx.ScrolledWindow):
         s1.Add(self.btn_create, flag=wx.ALIGN_RIGHT | wx.ALL, border=8)
         root.Add(s1, flag=wx.EXPAND | wx.ALL, border=12)
 
-        # ── Habilitar / Deshabilitar ────────────────────────────────────────
         box2 = wx.StaticBox(self, label=" Cambiar Estado de Usuarios ")
         s2 = wx.StaticBoxSizer(box2, wx.VERTICAL)
 
@@ -213,8 +377,6 @@ class CreatePanel(ProgressMixin, wx.ScrolledWindow):
         self._init_progress(root)
         self.SetSizer(root)
 
-    # ── helpers ─────────────────────────────────────────────────────────────
-
     def _all_buttons(self):
         return (self.btn_create, self.btn_enable, self.btn_disable)
 
@@ -231,8 +393,6 @@ class CreatePanel(ProgressMixin, wx.ScrolledWindow):
         return path
 
     def _validate_and_confirm(self, csv_file: str):
-        """Valida el CSV y pide confirmación si hay advertencias.
-        Retorna el reporte si se puede continuar, None si no."""
         report = get_validation_report(csv_file)
         if report is None:
             return None
@@ -253,8 +413,6 @@ class CreatePanel(ProgressMixin, wx.ScrolledWindow):
                 return None
         return report
 
-    # ── acciones ─────────────────────────────────────────────────────────────
-
     _PHASE_LABELS = {
         "iam":    "Creando usuarios IAM",
         "subnet": "Creando subnets",
@@ -273,7 +431,6 @@ class CreatePanel(ProgressMixin, wx.ScrolledWindow):
         group_name = self.grp_create.GetValue().strip() or None
         self._busy(True)
 
-        # 3 fases × N usuarios = rango total del gauge
         phases = ["iam", "subnet", "ecs"] if group_name else ["iam"]
         self.start_gauge(n * len(phases), f"Iniciando...  0/{n}")
 
@@ -333,10 +490,6 @@ class CreatePanel(ProgressMixin, wx.ScrolledWindow):
         _run(task)
 
 
-# ---------------------------------------------------------------------------
-# Pestaña Eliminar
-# ---------------------------------------------------------------------------
-
 RESOURCE_TYPES = ["Usuario", "ECS", "Subnet", "VPC"]
 
 
@@ -349,7 +502,6 @@ class DeletePanel(ProgressMixin, wx.ScrolledWindow):
     def _build(self):
         root = wx.BoxSizer(wx.VERTICAL)
 
-        # ── Eliminar grupo ──────────────────────────────────────────────────
         box1 = wx.StaticBox(self, label=" Eliminar Grupo y Todos sus Recursos ")
         s1 = wx.StaticBoxSizer(box1, wx.VERTICAL)
 
@@ -362,7 +514,6 @@ class DeletePanel(ProgressMixin, wx.ScrolledWindow):
         s1.Add(self.btn_del_group, flag=wx.ALIGN_RIGHT | wx.ALL, border=8)
         root.Add(s1, flag=wx.EXPAND | wx.ALL, border=12)
 
-        # ── Eliminar individual ─────────────────────────────────────────────
         box2 = wx.StaticBox(self, label=" Eliminar Recurso Individual ")
         s2 = wx.StaticBoxSizer(box2, wx.VERTICAL)
 
@@ -466,10 +617,6 @@ class DeletePanel(ProgressMixin, wx.ScrolledWindow):
         _run(task)
 
 
-# ---------------------------------------------------------------------------
-# Pestaña Listar
-# ---------------------------------------------------------------------------
-
 LIST_OPTIONS = [
     "Grupos IAM",
     "Usuarios de un grupo",
@@ -504,7 +651,6 @@ class ListPanel(ProgressMixin, wx.Panel):
     def _build(self):
         root = wx.BoxSizer(wx.VERTICAL)
 
-        # ── Controles ───────────────────────────────────────────────────────
         box = wx.StaticBox(self, label=" Consulta ")
         sctrl = wx.StaticBoxSizer(box, wx.VERTICAL)
 
@@ -526,7 +672,6 @@ class ListPanel(ProgressMixin, wx.Panel):
         sctrl.Add(self.btn_list, flag=wx.ALIGN_RIGHT | wx.ALL, border=8)
         root.Add(sctrl, flag=wx.EXPAND | wx.ALL, border=12)
 
-        # ── Resultados ──────────────────────────────────────────────────────
         res_box = wx.StaticBox(self, label=" Resultados ")
         sres = wx.StaticBoxSizer(res_box, wx.VERTICAL)
 
@@ -619,9 +764,16 @@ class ListPanel(ProgressMixin, wx.Panel):
         _run(task)
 
 
-# ---------------------------------------------------------------------------
-# Ventana principal
-# ---------------------------------------------------------------------------
+class ConfigDialog(wx.Dialog):
+    def __init__(self, parent):
+        super().__init__(parent, title="Configuración",
+                         size=(580, 640),
+                         style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
+        sizer = wx.BoxSizer(wx.VERTICAL)
+        sizer.Add(ConfigPanel(self), proportion=1, flag=wx.EXPAND)
+        self.SetSizer(sizer)
+        self.Centre()
+
 
 class MainFrame(wx.Frame):
     def __init__(self):
@@ -638,9 +790,9 @@ class MainFrame(wx.Frame):
         root = wx.BoxSizer(wx.VERTICAL)
 
         nb = wx.Notebook(panel)
-        nb.AddPage(CreatePanel(nb), "  Crear  ")
-        nb.AddPage(DeletePanel(nb), "  Eliminar  ")
-        nb.AddPage(ListPanel(nb), "  Listar  ")
+        nb.AddPage(CreatePanel(nb),  "  Crear  ")
+        nb.AddPage(DeletePanel(nb),  "  Eliminar  ")
+        nb.AddPage(ListPanel(nb),    "  Listar  ")
         root.Add(nb, proportion=1, flag=wx.EXPAND | wx.ALL, border=8)
 
         log_box = wx.StaticBox(panel, label=" Registro de operaciones ")
@@ -663,16 +815,32 @@ class MainFrame(wx.Frame):
 
         panel.SetSizer(root)
         self.CreateStatusBar().SetStatusText("Listo")
+        self._build_menubar()
         self.Bind(wx.EVT_CLOSE, self._on_close)
+
+    def _build_menubar(self):
+        menubar = wx.MenuBar()
+
+        menu_file = wx.Menu()
+        item_cfg = menu_file.Append(wx.ID_PREFERENCES, "Configuración...\tCtrl+,",
+                                    "Editar credenciales y parámetros de conexión")
+        menu_file.AppendSeparator()
+        menu_file.Append(wx.ID_EXIT, "Salir\tAlt+F4")
+        menubar.Append(menu_file, "Archivo")
+
+        self.SetMenuBar(menubar)
+        self.Bind(wx.EVT_MENU, self._on_open_config, item_cfg)
+        self.Bind(wx.EVT_MENU, lambda _: self.Close(), id=wx.ID_EXIT)
+
+    def _on_open_config(self, _event):
+        dlg = ConfigDialog(self)
+        dlg.ShowModal()
+        dlg.Destroy()
 
     def _on_close(self, event):
         sys.stdout = sys.__stdout__
         event.Skip()
 
-
-# ---------------------------------------------------------------------------
-# Punto de entrada
-# ---------------------------------------------------------------------------
 
 def main():
     app = wx.App(False)
