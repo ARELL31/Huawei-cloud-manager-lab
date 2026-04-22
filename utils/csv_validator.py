@@ -27,10 +27,6 @@ def _check_password(password: str) -> list[str]:
 
 
 def get_validation_report(csv_file: str) -> dict | None:
-    """
-    Retorna {'users': [...], 'errors': [...], 'warnings': [...]} o None si el archivo falla.
-    Pensado para uso programático (GUI, tests).
-    """
     try:
         users = csv_to_iam_users(csv_file)
     except FileNotFoundError:
@@ -63,11 +59,6 @@ def get_validation_report(csv_file: str) -> dict | None:
 
 
 def validate_csv(csv_file: str) -> bool:
-    """
-    Versión CLI: valida el CSV e imprime resultados.
-    Usa input() para confirmar advertencias.
-    Retorna True si es seguro continuar, False si se debe abortar.
-    """
     report = get_validation_report(csv_file)
     if report is None:
         return False

@@ -11,7 +11,7 @@ def create_user_subnets(
     vpc_id: str,
     usernames: list[str],
     config_file: str = "config/config.json",
-    on_progress=None,           # on_progress(current: int, total: int)
+    on_progress=None,
 ) -> dict:
     client = get_vpc_client(config_file)
     user_subnets = {}

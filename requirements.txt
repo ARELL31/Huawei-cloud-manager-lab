@@ -4,3 +4,4 @@ huaweicloudsdkecs
 huaweicloudsdkiam
 huaweicloudsdkobs
 huaweicloudsdkfunctiongraph
+wxPython
