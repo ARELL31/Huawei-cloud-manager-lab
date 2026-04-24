@@ -1,3 +1,4 @@
+import argparse
 import os
 import sys
 from datetime import datetime
@@ -293,7 +294,7 @@ def menu_ecs_resize():
         ram_gb = round(int(f.ram or 0) / 1024, 1)
         print(f"  {i:<4} {f.name or '':<25} {str(f.vcpus or ''):>5} {ram_gb:>10}  {f.id}")
 
-    chosen = _elegir_servidor(flavors_sorted)   # reuse pick-by-number helper
+    chosen = _elegir_servidor(flavors_sorted)
 
     if not confirmar(f"Cambiar '{server.name}' de {current} a {chosen.name}?"):
         print("[AVISO] Operacion cancelada.")
@@ -425,8 +426,229 @@ OPCIONES_PRINCIPAL = {
     "5": lambda: submenu(MENU_EXPORTAR, OPCIONES_EXPORTAR),
 }
 
+# ── CLI (argparse) ────────────────────────────────────────────────────────────
+
+_ACTIONS = [
+    "create", "enable", "disable",
+    "delete-group", "delete-user", "delete-ecs", "delete-subnet", "delete-vpc",
+    "start", "stop", "reboot", "resize",
+    "list-groups", "list-users", "list-ecs-group", "list-ecs-user",
+    "list-vpcs", "list-subnets",
+    "export",
+]
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="manage.py",
+        description="Huawei Cloud IAM Manager — modo no interactivo.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+acciones disponibles:
+  create          Crear usuarios desde CSV         --csv FILE [--group NOMBRE]
+  enable          Habilitar usuarios desde CSV      --csv FILE
+  disable         Deshabilitar usuarios desde CSV   --csv FILE
+  delete-group    Eliminar grupo y recursos         --group NOMBRE
+  delete-user     Eliminar usuario                  --user NOMBRE [--group NOMBRE]
+  delete-ecs      Eliminar ECS                      --ecs NOMBRE
+  delete-subnet   Eliminar subnet                   --subnet NOMBRE --vpc NOMBRE
+  delete-vpc      Eliminar VPC                      --vpc NOMBRE
+  start           Iniciar ECS                       --group NOMBRE | --user NOMBRE
+  stop            Detener ECS                       --group NOMBRE | --user NOMBRE [--force]
+  reboot          Reiniciar ECS                     --group NOMBRE | --user NOMBRE [--force]
+  resize          Cambiar flavor de ECS             --user NOMBRE --flavor ID
+  list-groups     Listar grupos IAM
+  list-users      Listar usuarios de un grupo       --group NOMBRE
+  list-ecs-group  Listar ECS de un grupo            --group NOMBRE
+  list-ecs-user   Listar ECS de un usuario          --user NOMBRE
+  list-vpcs       Listar VPCs
+  list-subnets    Listar subnets de una VPC         --vpc NOMBRE
+  export          Exportar snapshot                 [--format csv|json] [--output FILE]
+
+sin argumentos: abre el menú interactivo.
+""",
+    )
+    parser.add_argument("--action",  choices=_ACTIONS, metavar="ACCION",
+                        help="Acción a ejecutar (ver lista abajo)")
+    parser.add_argument("--csv",     metavar="FILE",   help="Archivo CSV de usuarios")
+    parser.add_argument("--group",   metavar="NOMBRE", help="Nombre del grupo IAM")
+    parser.add_argument("--user",    metavar="NOMBRE", help="Nombre del usuario IAM")
+    parser.add_argument("--ecs",     metavar="NOMBRE", help="Nombre de la ECS")
+    parser.add_argument("--subnet",  metavar="NOMBRE", help="Nombre de la subnet")
+    parser.add_argument("--vpc",     metavar="NOMBRE", help="Nombre de la VPC")
+    parser.add_argument("--flavor",  metavar="ID",     help="ID del flavor destino (resize)")
+    parser.add_argument("--force",   action="store_true",
+                        help="Forzar apagado/reinicio (HARD) en stop/reboot")
+    parser.add_argument("--format",  choices=["csv", "json"], default="csv",
+                        help="Formato de exportación (default: csv)")
+    parser.add_argument("--output",  metavar="FILE",   help="Archivo de salida para export")
+    parser.add_argument("--yes", "-y", action="store_true",
+                        help="Confirmar operaciones destructivas sin preguntar")
+    return parser
+
+
+def _need(args, *fields):
+    """Aborta si algún campo requerido está ausente."""
+    for f in fields:
+        if not getattr(args, f, None):
+            print(f"[ERROR] --{f} es requerido para '{args.action}'.")
+            sys.exit(1)
+
+
+def _need_target(args):
+    """Aborta si no se indicó ni --group ni --user."""
+    if not args.group and not args.user:
+        print(f"[ERROR] Se requiere --group o --user para '{args.action}'.")
+        sys.exit(1)
+
+
+def _get_servers(args):
+    servers = (get_servers_for_group(args.group) if args.group
+               else get_servers_for_user(args.user))
+    if not servers:
+        print("[INFO] No se encontraron instancias.")
+        sys.exit(0)
+    return servers
+
+
+def _ok(args, msg: str) -> bool:
+    """Devuelve True si el usuario confirmó (o se pasó --yes)."""
+    if args.yes:
+        return True
+    return confirmar(msg)
+
+
+def _run_cli(args):
+    action = args.action
+
+    # ── Crear ──────────────────────────────────────────────────────────────
+    if action == "create":
+        _need(args, "csv")
+        if not validate_csv(args.csv):
+            sys.exit(1)
+        create_users(args.csv, group_name=args.group or "")
+
+    elif action == "enable":
+        _need(args, "csv")
+        enable_users(args.csv)
+
+    elif action == "disable":
+        _need(args, "csv")
+        disable_users(args.csv)
+
+    # ── Eliminar ───────────────────────────────────────────────────────────
+    elif action == "delete-group":
+        _need(args, "group")
+        if not _ok(args, f"Eliminar grupo '{args.group}' y todos sus recursos?"):
+            print("[AVISO] Operacion cancelada.")
+            return
+        delete_all(args.group)
+
+    elif action == "delete-user":
+        _need(args, "user")
+        if not _ok(args, f"Eliminar usuario '{args.user}' y sus ECS?"):
+            print("[AVISO] Operacion cancelada.")
+            return
+        delete_single_user(args.user, args.group or "")
+
+    elif action == "delete-ecs":
+        _need(args, "ecs")
+        if not _ok(args, f"Eliminar ECS '{args.ecs}'?"):
+            print("[AVISO] Operacion cancelada.")
+            return
+        delete_single_ecs(args.ecs)
+
+    elif action == "delete-subnet":
+        _need(args, "subnet", "vpc")
+        if not _ok(args, f"Eliminar subnet '{args.subnet}' de VPC '{args.vpc}'?"):
+            print("[AVISO] Operacion cancelada.")
+            return
+        delete_single_subnet(args.subnet, args.vpc)
+
+    elif action == "delete-vpc":
+        _need(args, "vpc")
+        if not _ok(args, f"Eliminar VPC '{args.vpc}'?"):
+            print("[AVISO] Operacion cancelada.")
+            return
+        delete_single_vpc(args.vpc)
+
+    # ── ECS ────────────────────────────────────────────────────────────────
+    elif action in ("start", "stop", "reboot"):
+        _need_target(args)
+        servers = _get_servers(args)
+        modo = " (HARD)" if args.force else " (SOFT)"
+        label = {"start": "Iniciar", "stop": f"Detener{modo}", "reboot": f"Reiniciar{modo}"}[action]
+        if not _ok(args, f"{label} {len(servers)} instancia(s)?"):
+            print("[AVISO] Operacion cancelada.")
+            return
+        if action == "start":
+            batch_start(servers)
+        elif action == "stop":
+            batch_stop(servers, force=args.force)
+        else:
+            batch_reboot(servers, force=args.force)
+
+    elif action == "resize":
+        _need_target(args)
+        _need(args, "flavor")
+        servers = _get_servers(args)
+        if len(servers) > 1:
+            names = ", ".join(s.name for s in servers)
+            print(f"[AVISO] Se encontraron {len(servers)} instancias: {names}")
+            print(f"[AVISO] Se aplicara el resize solo a la primera: {servers[0].name}")
+        server = servers[0]
+        if not _ok(args, f"Cambiar flavor de '{server.name}' a '{args.flavor}'?"):
+            print("[AVISO] Operacion cancelada.")
+            return
+        resize_server(server.id, args.flavor)
+
+    # ── Listar ─────────────────────────────────────────────────────────────
+    elif action == "list-groups":
+        list_groups()
+
+    elif action == "list-users":
+        _need(args, "group")
+        list_group_users(args.group)
+
+    elif action == "list-ecs-group":
+        _need(args, "group")
+        list_ecs_for_group(args.group)
+
+    elif action == "list-ecs-user":
+        _need(args, "user")
+        list_ecs_for_user(args.user)
+
+    elif action == "list-vpcs":
+        list_vpcs()
+
+    elif action == "list-subnets":
+        _need(args, "vpc")
+        list_subnets_for_vpc(args.vpc)
+
+    # ── Exportar ───────────────────────────────────────────────────────────
+    elif action == "export":
+        fmt = args.format.upper()
+        ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        path = args.output or os.path.join("exports", f"snapshot_{ts}.{args.format}")
+        print(f"\n[INFO] Recolectando datos del cloud...")
+        snapshot = collect_snapshot()
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        writer = write_csv if fmt == "CSV" else write_json
+        n_groups, n_users, n_ecs = writer(snapshot, path)
+        print(f"[OK] Snapshot exportado — {n_groups} grupo(s), {n_users} usuario(s), {n_ecs} ECS")
+        print(f"[OK] Archivo: {os.path.abspath(path)}")
+
 
 def main():
+    if len(sys.argv) > 1:
+        args = _build_parser().parse_args()
+        if args.action is None:
+            _build_parser().print_help()
+            sys.exit(0)
+        _run_cli(args)
+        return
+
+    # sin argumentos → menú interactivo
     while True:
         opcion = input(MENU_PRINCIPAL).strip()
         if opcion == "0":
