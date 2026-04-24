@@ -93,10 +93,14 @@ class DeletePanel(ProgressMixin, wx.ScrolledWindow):
         self.start_pulse(f"Eliminando grupo '{name}'...")
 
         def task():
-            print(f"\n[INICIO] Eliminando grupo '{name}' y sus recursos...")
-            delete_all(name)
-            wx.CallAfter(self.stop_progress)
-            wx.CallAfter(self._busy, False)
+            try:
+                print(f"\n[INICIO] Eliminando grupo '{name}' y sus recursos...")
+                delete_all(name)
+            except Exception as e:
+                print(f"[ERROR] Operación interrumpida: {e}")
+            finally:
+                wx.CallAfter(self.stop_progress)
+                wx.CallAfter(self._busy, False)
 
         run_thread(task)
 
@@ -119,16 +123,20 @@ class DeletePanel(ProgressMixin, wx.ScrolledWindow):
         self.start_pulse(f"Eliminando {tipo} '{name}'...")
 
         def task():
-            print(f"\n[INICIO] Eliminando {tipo} '{name}'...")
-            if tipo == "Usuario":
-                delete_single_user(name, extra)
-            elif tipo == "ECS":
-                delete_single_ecs(name)
-            elif tipo == "Subnet":
-                delete_single_subnet(name, extra)
-            elif tipo == "VPC":
-                delete_single_vpc(name)
-            wx.CallAfter(self.stop_progress)
-            wx.CallAfter(self._busy, False)
+            try:
+                print(f"\n[INICIO] Eliminando {tipo} '{name}'...")
+                if tipo == "Usuario":
+                    delete_single_user(name, extra)
+                elif tipo == "ECS":
+                    delete_single_ecs(name)
+                elif tipo == "Subnet":
+                    delete_single_subnet(name, extra)
+                elif tipo == "VPC":
+                    delete_single_vpc(name)
+            except Exception as e:
+                print(f"[ERROR] Operación interrumpida: {e}")
+            finally:
+                wx.CallAfter(self.stop_progress)
+                wx.CallAfter(self._busy, False)
 
         run_thread(task)
