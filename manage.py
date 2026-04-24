@@ -1,17 +1,28 @@
+import os
 import sys
+from datetime import datetime
+
 from utils.iam.create_users import create_users
 from utils.iam.enable_users import enable_users
 from utils.iam.disable_users import disable_users
-from utils.delete_all import delete_all, delete_single_user, delete_single_ecs, delete_single_subnet, delete_single_vpc
+from utils.delete_all import (
+    delete_all, delete_single_user, delete_single_ecs,
+    delete_single_subnet, delete_single_vpc,
+)
 from utils.csv_validator import validate_csv
 from utils.list_resources import (
-    list_groups,
-    list_group_users,
-    list_ecs_for_group,
-    list_ecs_for_user,
-    list_vpcs,
-    list_subnets_for_vpc,
+    list_groups, list_group_users,
+    list_ecs_for_group, list_ecs_for_user,
+    list_vpcs, list_subnets_for_vpc,
 )
+from utils.ecs.manage_ecs import (
+    get_servers_for_group, get_servers_for_user,
+    batch_start, batch_stop, batch_reboot,
+    list_resize_flavors, resize_server,
+)
+from utils.export_snapshot import collect_snapshot, write_csv, write_json
+
+# ── Menús ─────────────────────────────────────────────────────────────────────
 
 MENU_PRINCIPAL = """
 ==============================
@@ -19,7 +30,9 @@ MENU_PRINCIPAL = """
 ==============================
 1. Crear
 2. Eliminar
-3. Listar
+3. Gestión ECS
+4. Listar
+5. Exportar
 ------------------------------
 0. Salir
 ------------------------------
@@ -47,6 +60,17 @@ MENU_ELIMINAR = """
 ------------------------------
 Selecciona una opcion: """
 
+MENU_ECS = """
+--- Gestión ECS --------------
+1. Iniciar ECS
+2. Detener ECS
+3. Reiniciar ECS
+4. Cambiar flavor (upgrade/downgrade)
+------------------------------
+0. Volver
+------------------------------
+Selecciona una opcion: """
+
 MENU_LISTAR = """
 --- Listar -------------------
 1. Listar grupos IAM
@@ -60,13 +84,68 @@ MENU_LISTAR = """
 ------------------------------
 Selecciona una opcion: """
 
+MENU_EXPORTAR = """
+--- Exportar -----------------
+1. Exportar snapshot en CSV
+2. Exportar snapshot en JSON
+------------------------------
+0. Volver
+------------------------------
+Selecciona una opcion: """
+
+# ── Helpers comunes ───────────────────────────────────────────────────────────
 
 def pedir_csv():
-    csv_file = input("Ruta del archivo CSV: ").strip()
-    if not csv_file:
+    path = input("Ruta del archivo CSV: ").strip()
+    if not path:
         print("[AVISO] No ingresaste una ruta.")
         return None
-    return csv_file
+    return path
+
+
+def confirmar(mensaje: str) -> bool:
+    return input(f"{mensaje} (s/n): ").strip().lower() == "s"
+
+
+def _pedir_objetivo() -> list | None:
+    """Pide grupo o usuario y devuelve la lista de servidores encontrados."""
+    tipo = input("Buscar por (g=Grupo / u=Usuario): ").strip().lower()
+    if tipo not in ("g", "u"):
+        print("[AVISO] Opcion invalida.")
+        return None
+    nombre = input("Nombre: ").strip()
+    if not nombre:
+        print("[AVISO] El nombre no puede estar vacio.")
+        return None
+
+    print("[INFO] Buscando ECS...")
+    servers = get_servers_for_group(nombre) if tipo == "g" else get_servers_for_user(nombre)
+
+    if not servers:
+        print("[INFO] No se encontraron instancias.")
+        return None
+
+    print(f"\n{len(servers)} instancia(s) encontrada(s):")
+    for i, s in enumerate(servers, 1):
+        owner = (s.metadata or {}).get("owner", "—")
+        print(f"  {i}. {s.name:<30} {owner:<25} [{s.status}]")
+    return servers
+
+
+def _elegir_servidor(servers: list):
+    """Pide al usuario que elija uno de los servidores listados."""
+    if len(servers) == 1:
+        return servers[0]
+    while True:
+        try:
+            idx = int(input("Numero de la instancia: ").strip()) - 1
+            if 0 <= idx < len(servers):
+                return servers[idx]
+            print("[AVISO] Numero fuera de rango.")
+        except ValueError:
+            print("[AVISO] Ingresa un numero valido.")
+
+# ── Crear ─────────────────────────────────────────────────────────────────────
 
 def menu_crear_usuarios():
     csv_file = pedir_csv()
@@ -93,13 +172,14 @@ def menu_deshabilitar_usuarios():
     if csv_file:
         disable_users(csv_file)
 
+# ── Eliminar ──────────────────────────────────────────────────────────────────
+
 def menu_eliminar_grupo():
     group_name = input("Nombre del grupo a eliminar (y todos sus recursos): ").strip()
     if not group_name:
         print("[AVISO] No ingresaste nombre de grupo.")
         return
-    confirm = input(f"Esto eliminara usuarios, ECS, subnets y VPC del grupo '{group_name}'. Confirmar? (s/n): ").strip().lower()
-    if confirm != "s":
+    if not confirmar(f"Esto eliminara usuarios, ECS, subnets y VPC del grupo '{group_name}'."):
         print("[AVISO] Operacion cancelada.")
         return
     delete_all(group_name)
@@ -111,8 +191,7 @@ def menu_eliminar_usuario():
         print("[AVISO] No ingresaste nombre de usuario.")
         return
     group_name = input("Nombre del grupo al que pertenece (Enter para omitir): ").strip()
-    confirm = input(f"Esto eliminara al usuario '{username}' y sus ECS. Confirmar? (s/n): ").strip().lower()
-    if confirm != "s":
+    if not confirmar(f"Esto eliminara al usuario '{username}' y sus ECS."):
         print("[AVISO] Operacion cancelada.")
         return
     delete_single_user(username, group_name)
@@ -123,8 +202,7 @@ def menu_eliminar_ecs():
     if not server_name:
         print("[AVISO] No ingresaste nombre de ECS.")
         return
-    confirm = input(f"Esto eliminara la ECS '{server_name}' junto con su volumen e IP publica. Confirmar? (s/n): ").strip().lower()
-    if confirm != "s":
+    if not confirmar(f"Esto eliminara la ECS '{server_name}' junto con su volumen e IP publica."):
         print("[AVISO] Operacion cancelada.")
         return
     delete_single_ecs(server_name)
@@ -139,8 +217,7 @@ def menu_eliminar_subnet():
     if not vpc_name:
         print("[AVISO] No ingresaste nombre de VPC.")
         return
-    confirm = input(f"Esto eliminara la subnet '{subnet_name}' de la VPC '{vpc_name}'. Confirmar? (s/n): ").strip().lower()
-    if confirm != "s":
+    if not confirmar(f"Esto eliminara la subnet '{subnet_name}' de la VPC '{vpc_name}'."):
         print("[AVISO] Operacion cancelada.")
         return
     delete_single_subnet(subnet_name, vpc_name)
@@ -151,11 +228,79 @@ def menu_eliminar_vpc():
     if not vpc_name:
         print("[AVISO] No ingresaste nombre de VPC.")
         return
-    confirm = input(f"Esto eliminara la VPC '{vpc_name}' (debe no tener subnets). Confirmar? (s/n): ").strip().lower()
-    if confirm != "s":
+    if not confirmar(f"Esto eliminara la VPC '{vpc_name}' (debe no tener subnets)."):
         print("[AVISO] Operacion cancelada.")
         return
     delete_single_vpc(vpc_name)
+
+# ── Gestión ECS ───────────────────────────────────────────────────────────────
+
+def menu_ecs_iniciar():
+    servers = _pedir_objetivo()
+    if not servers:
+        return
+    if not confirmar(f"Iniciar {len(servers)} instancia(s)?"):
+        print("[AVISO] Operacion cancelada.")
+        return
+    batch_start(servers)
+
+
+def menu_ecs_detener():
+    servers = _pedir_objetivo()
+    if not servers:
+        return
+    force = input("Forzar apagado (HARD)? (s/n, Enter=no): ").strip().lower() == "s"
+    modo = " (HARD)" if force else " (SOFT)"
+    if not confirmar(f"Detener{modo} {len(servers)} instancia(s)?"):
+        print("[AVISO] Operacion cancelada.")
+        return
+    batch_stop(servers, force=force)
+
+
+def menu_ecs_reiniciar():
+    servers = _pedir_objetivo()
+    if not servers:
+        return
+    force = input("Forzar reinicio (HARD)? (s/n, Enter=no): ").strip().lower() == "s"
+    modo = " (HARD)" if force else " (SOFT)"
+    if not confirmar(f"Reiniciar{modo} {len(servers)} instancia(s)?"):
+        print("[AVISO] Operacion cancelada.")
+        return
+    batch_reboot(servers, force=force)
+
+
+def menu_ecs_resize():
+    servers = _pedir_objetivo()
+    if not servers:
+        return
+
+    server = _elegir_servidor(servers)
+
+    current = getattr(server.flavor, "name", "—") if server.flavor else "—"
+    print(f"\n[INFO] Instancia: {server.name}  |  Flavor actual: {current}")
+    print("[INFO] Cargando flavors disponibles...")
+    flavors = list_resize_flavors(server.id)
+
+    if not flavors:
+        print("[AVISO] No se encontraron flavors disponibles para esta instancia.")
+        return
+
+    flavors_sorted = sorted(flavors, key=lambda f: (int(f.vcpus or 0), int(f.ram or 0)))
+    print(f"\n{len(flavors_sorted)} flavor(s) disponibles:")
+    print(f"  {'#':<4} {'Nombre':<25} {'vCPU':>5} {'RAM (GB)':>10}  ID")
+    print(f"  {'-'*4} {'-'*25} {'-'*5} {'-'*10}  {'-'*36}")
+    for i, f in enumerate(flavors_sorted, 1):
+        ram_gb = round(int(f.ram or 0) / 1024, 1)
+        print(f"  {i:<4} {f.name or '':<25} {str(f.vcpus or ''):>5} {ram_gb:>10}  {f.id}")
+
+    chosen = _elegir_servidor(flavors_sorted)   # reuse pick-by-number helper
+
+    if not confirmar(f"Cambiar '{server.name}' de {current} a {chosen.name}?"):
+        print("[AVISO] Operacion cancelada.")
+        return
+    resize_server(server.id, chosen.id)
+
+# ── Listar ────────────────────────────────────────────────────────────────────
 
 def menu_listar_grupos():
     list_groups()
@@ -196,6 +341,33 @@ def menu_listar_subnets():
         return
     list_subnets_for_vpc(vpc_name)
 
+# ── Exportar ──────────────────────────────────────────────────────────────────
+
+def _menu_exportar(fmt: str):
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    default = os.path.join("exports", f"snapshot_{ts}.{fmt.lower()}")
+    path = input(f"Ruta de salida [{default}]: ").strip() or default
+
+    print("\n[INFO] Recolectando datos del cloud...")
+    snapshot = collect_snapshot()
+
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    writer = write_csv if fmt == "CSV" else write_json
+    n_groups, n_users, n_ecs = writer(snapshot, path)
+
+    print(f"[OK] Snapshot exportado — {n_groups} grupo(s), {n_users} usuario(s), {n_ecs} ECS")
+    print(f"[OK] Archivo: {os.path.abspath(path)}")
+
+
+def menu_exportar_csv():
+    _menu_exportar("CSV")
+
+
+def menu_exportar_json():
+    _menu_exportar("JSON")
+
+# ── Tablas de opciones ────────────────────────────────────────────────────────
+
 OPCIONES_CREAR = {
     "1": menu_crear_usuarios,
     "2": menu_habilitar_usuarios,
@@ -210,6 +382,13 @@ OPCIONES_ELIMINAR = {
     "5": menu_eliminar_vpc,
 }
 
+OPCIONES_ECS = {
+    "1": menu_ecs_iniciar,
+    "2": menu_ecs_detener,
+    "3": menu_ecs_reiniciar,
+    "4": menu_ecs_resize,
+}
+
 OPCIONES_LISTAR = {
     "1": menu_listar_grupos,
     "2": menu_listar_usuarios_grupo,
@@ -219,6 +398,12 @@ OPCIONES_LISTAR = {
     "6": menu_listar_subnets,
 }
 
+OPCIONES_EXPORTAR = {
+    "1": menu_exportar_csv,
+    "2": menu_exportar_json,
+}
+
+# ── Bucle principal ───────────────────────────────────────────────────────────
 
 def submenu(prompt: str, opciones: dict):
     while True:
@@ -231,10 +416,13 @@ def submenu(prompt: str, opciones: dict):
         else:
             print("[AVISO] Opcion no valida, intenta de nuevo.")
 
+
 OPCIONES_PRINCIPAL = {
-    "1": lambda: submenu(MENU_CREAR, OPCIONES_CREAR),
+    "1": lambda: submenu(MENU_CREAR,    OPCIONES_CREAR),
     "2": lambda: submenu(MENU_ELIMINAR, OPCIONES_ELIMINAR),
-    "3": lambda: submenu(MENU_LISTAR, OPCIONES_LISTAR),
+    "3": lambda: submenu(MENU_ECS,      OPCIONES_ECS),
+    "4": lambda: submenu(MENU_LISTAR,   OPCIONES_LISTAR),
+    "5": lambda: submenu(MENU_EXPORTAR, OPCIONES_EXPORTAR),
 }
 
 
