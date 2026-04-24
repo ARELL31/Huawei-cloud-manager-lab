@@ -6,6 +6,7 @@ from gui.log import LogRedirector
 from gui.panels.config import ConfigDialog
 from gui.panels.create import CreatePanel
 from gui.panels.delete import DeletePanel
+from gui.panels.export import ExportPanel
 from gui.panels.list_panel import ListPanel
 
 
@@ -27,6 +28,7 @@ class MainFrame(wx.Frame):
         nb.AddPage(CreatePanel(nb),  "  Crear  ")
         nb.AddPage(DeletePanel(nb),  "  Eliminar  ")
         nb.AddPage(ListPanel(nb),    "  Listar  ")
+        nb.AddPage(ExportPanel(nb),  "  Exportar  ")
         root.Add(nb, proportion=1, flag=wx.EXPAND | wx.ALL, border=8)
 
         log_box = wx.StaticBox(panel, label=" Registro de operaciones ")
