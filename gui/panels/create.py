@@ -137,10 +137,14 @@ class CreatePanel(ProgressMixin, wx.ScrolledWindow):
             wx.CallAfter(self.update_gauge, value, label)
 
         def task():
-            print(f"\n[INICIO] Creando usuarios desde '{csv_file}'...")
-            create_users(csv_file, group_name=group_name, on_progress=progress)
-            wx.CallAfter(self.stop_progress)
-            wx.CallAfter(self._busy, False)
+            try:
+                print(f"\n[INICIO] Creando usuarios desde '{csv_file}'...")
+                create_users(csv_file, group_name=group_name, on_progress=progress)
+            except Exception as e:
+                print(f"[ERROR] Operación interrumpida: {e}")
+            finally:
+                wx.CallAfter(self.stop_progress)
+                wx.CallAfter(self._busy, False)
 
         run_thread(task)
 
@@ -175,9 +179,13 @@ class CreatePanel(ProgressMixin, wx.ScrolledWindow):
                          f"{verb} usuarios  {current}/{total}")
 
         def task():
-            print(f"\n[INICIO] {verb} usuarios...")
-            action(csv_file, on_progress=progress if n > 0 else None)
-            wx.CallAfter(self.stop_progress)
-            wx.CallAfter(self._busy, False)
+            try:
+                print(f"\n[INICIO] {verb} usuarios...")
+                action(csv_file, on_progress=progress if n > 0 else None)
+            except Exception as e:
+                print(f"[ERROR] Operación interrumpida: {e}")
+            finally:
+                wx.CallAfter(self.stop_progress)
+                wx.CallAfter(self._busy, False)
 
         run_thread(task)

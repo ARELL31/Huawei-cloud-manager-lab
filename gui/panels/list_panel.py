@@ -111,22 +111,26 @@ class ListPanel(ProgressMixin, wx.Panel):
         self.start_pulse(f"Consultando {opcion.lower()}...")
 
         def task():
-            print(f"\n[CONSULTA] {opcion}" + (f": {filtro}" if filtro else ""))
             items = []
-            if opcion == "Grupos IAM":
-                items = list_groups()
-            elif opcion == "Usuarios de un grupo":
-                items = list_group_users(filtro)
-            elif opcion == "ECS de un grupo":
-                items = list_ecs_for_group(filtro)
-            elif opcion == "ECS de un usuario":
-                items = list_ecs_for_user(filtro)
-            elif opcion == "VPCs":
-                items = list_vpcs()
-            elif opcion == "Subnets de una VPC":
-                items = list_subnets_for_vpc(filtro)
-            wx.CallAfter(self.stop_progress)
-            wx.CallAfter(self._populate, opcion, items)
-            wx.CallAfter(self.btn_list.Enable)
+            try:
+                print(f"\n[CONSULTA] {opcion}" + (f": {filtro}" if filtro else ""))
+                if opcion == "Grupos IAM":
+                    items = list_groups()
+                elif opcion == "Usuarios de un grupo":
+                    items = list_group_users(filtro)
+                elif opcion == "ECS de un grupo":
+                    items = list_ecs_for_group(filtro)
+                elif opcion == "ECS de un usuario":
+                    items = list_ecs_for_user(filtro)
+                elif opcion == "VPCs":
+                    items = list_vpcs()
+                elif opcion == "Subnets de una VPC":
+                    items = list_subnets_for_vpc(filtro)
+            except Exception as e:
+                print(f"[ERROR] Consulta fallida: {e}")
+            finally:
+                wx.CallAfter(self.stop_progress)
+                wx.CallAfter(self._populate, opcion, items)
+                wx.CallAfter(self.btn_list.Enable)
 
         run_thread(task)
