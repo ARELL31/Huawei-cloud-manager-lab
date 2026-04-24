@@ -51,6 +51,43 @@ class LogRedirector:
         pass
 
 
+_HUAWEI_REGIONS = [
+    "ae-ad-1",
+    "af-north-1",
+    "af-south-1",
+    "ap-southeast-1",
+    "ap-southeast-2",
+    "ap-southeast-3",
+    "ap-southeast-4",
+    "ap-southeast-5",
+    "cn-east-2",
+    "cn-east-3",
+    "cn-east-4",
+    "cn-east-5",
+    "cn-north-1",
+    "cn-north-2",
+    "cn-north-4",
+    "cn-north-9",
+    "cn-north-11",
+    "cn-north-12",
+    "cn-south-1",
+    "cn-south-2",
+    "cn-south-4",
+    "cn-southwest-2",
+    "cn-southwest-3",
+    "eu-west-0",
+    "eu-west-101",
+    "la-north-2",
+    "la-south-2",
+    "me-east-1",
+    "my-kualalumpur-1",
+    "na-mexico-1",
+    "ru-moscow-1",
+    "sa-brazil-1",
+    "tr-west-1",
+]
+
+
 def _field(parent, label, hint=""):
     row = wx.BoxSizer(wx.HORIZONTAL)
     lbl = wx.StaticText(parent, label=label, size=(90, -1))
@@ -209,7 +246,12 @@ class ConfigPanel(wx.ScrolledWindow):
         row_pid, self.fld_project_id = _field(self, "Project ID:", "ID del proyecto regional")
         s2.Add(row_pid, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, border=8)
 
-        row_reg, self.fld_region = _field(self, "Región:", "ej. la-north-2")
+        row_reg = wx.BoxSizer(wx.HORIZONTAL)
+        lbl_reg = wx.StaticText(self, label="Región:", size=(90, -1))
+        self.fld_region = wx.Choice(self, choices=_HUAWEI_REGIONS)
+        self.fld_region.SetSelection(0)
+        row_reg.Add(lbl_reg, flag=wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, border=6)
+        row_reg.Add(self.fld_region, proportion=1, flag=wx.EXPAND)
         s2.Add(row_reg, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, border=8)
 
         root.Add(s2, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, border=12)
@@ -255,7 +297,9 @@ class ConfigPanel(wx.ScrolledWindow):
             self.fld_sk.SetValue(cfg.get("sk", ""))
             self.fld_domain_id.SetValue(cfg.get("domain_id", ""))
             self.fld_project_id.SetValue(cfg.get("project_id", ""))
-            self.fld_region.SetValue(cfg.get("region", ""))
+            region = cfg.get("region", "")
+            if region in _HUAWEI_REGIONS:
+                self.fld_region.SetSelection(_HUAWEI_REGIONS.index(region))
             ecs = cfg.get("ecs", {})
             self.fld_image_ref.SetValue(ecs.get("image_ref", ""))
             self.fld_flavor_ref.SetValue(ecs.get("flavor_ref", ""))
@@ -271,7 +315,6 @@ class ConfigPanel(wx.ScrolledWindow):
             ("Secret Key",  self.fld_sk),
             ("Domain ID",   self.fld_domain_id),
             ("Project ID",  self.fld_project_id),
-            ("Región",      self.fld_region),
             ("Image Ref",   self.fld_image_ref),
             ("Flavor Ref",  self.fld_flavor_ref),
         ]
@@ -295,7 +338,7 @@ class ConfigPanel(wx.ScrolledWindow):
             "sk":         self.fld_sk.GetValue().strip(),
             "domain_id":  self.fld_domain_id.GetValue().strip(),
             "project_id": self.fld_project_id.GetValue().strip(),
-            "region":     self.fld_region.GetValue().strip(),
+            "region":     self.fld_region.GetStringSelection(),
             "ecs": {
                 "image_ref":        self.fld_image_ref.GetValue().strip(),
                 "flavor_ref":       self.fld_flavor_ref.GetValue().strip(),
