@@ -1,8 +1,9 @@
-import json
 from config.connection import get_client
 from huaweicloudsdkiam.v3 import (
     CreateCloudServiceCustomPolicyRequest,
     CreateCloudServiceCustomPolicyRequestBody,
+    UpdateCloudServiceCustomPolicyRequest,
+    UpdateCloudServiceCustomPolicyRequestBody,
     ServicePolicyRoleOption,
     KeystoneListPermissionsRequest,
 )
@@ -18,39 +19,36 @@ def build_policy_document():
             {
                 "Effect": "Allow",
                 "Action": [
-                    "ecs:servers:list",
-                    "ecs:servers:get",
-                    "ecs:serverConsoles:create",
-                    "ecs:serverInterfaces:get",
-                    "ecs:serverInterfaces:list",
-                    "evs:volumes:get",
-                    "evs:volumes:list",
-                    "vpc:ports:get",
-                    "vpc:publicips:get",
-                    "vpc:subnets:get",
-                    "vpc:networks:get",
-                    "vpc:floatingips:get",
+                    "ecs:*:get",
+                    "ecs:*:get*",
+                    "ecs:*:list",
+                    "ecs:*:list*",
+                    "ecs:*:show*",
+                    "ecs:servers:createConsole",
+                    "ecs:cloudServers:vnc",
+                    "evs:*:get",
+                    "evs:*:get*",
+                    "evs:*:list",
+                    "evs:*:list*",
+                    "vpc:*:get",
+                    "vpc:*:get*",
+                    "vpc:*:list",
+                    "vpc:*:list*",
                 ]
             },
             {
                 "Effect": "Deny",
                 "Action": [
-                    "ecs:servers:create",
-                    "ecs:servers:delete",
-                    "ecs:servers:update",
                     "ecs:servers:start",
                     "ecs:servers:stop",
-                    "ecs:servers:reboot",
-                    "ecs:servers:resize",
-                    "ecs:serverVolumes:use",
-                    "ecs:serverVolumes:delete",
-                    "ecs:serverKeypairs:create",
-                    "ecs:serverPasswords:update",
+                    "ecs:servers:delete",
+                    "ecs:servers:setMetadata",
+                    "ecs:servers:setTags",
+                    "ecs:serverPasswords:manage",
                     "ecs:serverGroups:manage",
-                    "ecs:serverTags:create",
-                    "ecs:serverTags:delete",
-                    "ecs:serverMetadata:set",
-                    "ecs:serverMetadata:delete",
+                    "ecs:serverVolumeAttachments:create",
+                    "ecs:serverVolumeAttachments:delete",
+                    "ecs:serverVolumes:use",
                 ]
             }
         ]
@@ -59,11 +57,9 @@ def build_policy_document():
 
 def find_existing_policy(client, policy_name: str):
     try:
-        request = KeystoneListPermissionsRequest()
-        response = client.keystone_list_permissions(request)
+        response = client.keystone_list_permissions(KeystoneListPermissionsRequest())
         for role in response.roles:
             if role.name == policy_name:
-                print(f"[OK] Politica custom ya existe: {policy_name} ({role.id})")
                 return role.id
     except exceptions.ClientRequestException as e:
         print(f"[WARN] No se pudo verificar existencia de politica: {e.error_msg}")
@@ -74,25 +70,32 @@ def create_custom_policy(config_file: str = "config/config.json") -> str | None:
     client = get_client(config_file)
 
     existing_id = find_existing_policy(client, POLICY_NAME)
+
+    role_option = ServicePolicyRoleOption(
+        display_name="ECS VNC SSH Only",
+        type="AX",
+        description="Solo acceso por VNC y SSH. Sin permisos de encendido, apagado, reinicio, borrado ni modificacion.",
+        policy=build_policy_document()
+    )
+
     if existing_id:
-        return existing_id
+        try:
+            request = UpdateCloudServiceCustomPolicyRequest(role_id=existing_id)
+            request.body = UpdateCloudServiceCustomPolicyRequestBody(role=role_option)
+            client.update_cloud_service_custom_policy(request)
+            print(f"[OK] Politica custom actualizada: {POLICY_NAME} ({existing_id})")
+            return existing_id
+        except exceptions.ClientRequestException as e:
+            print(f"[ERROR] No se pudo actualizar la politica custom: {e.error_msg}")
+            return None
 
     try:
-        role_option = ServicePolicyRoleOption(
-            display_name="ECS VNC/SSH Only",
-            type="AX",
-            description="Solo acceso por VNC y SSH. Sin permisos de encendido, apagado, reinicio, borrado ni modificacion.",
-            policy=build_policy_document()
-        )
-
         request = CreateCloudServiceCustomPolicyRequest()
         request.body = CreateCloudServiceCustomPolicyRequestBody(role=role_option)
-
         response = client.create_cloud_service_custom_policy(request)
         role_id = response.role.id
         print(f"[OK] Politica custom creada: {POLICY_NAME} ({role_id})")
         return role_id
-
     except exceptions.ClientRequestException as e:
         print(f"[ERROR] No se pudo crear la politica custom: {e.error_msg}")
         return None

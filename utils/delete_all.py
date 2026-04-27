@@ -1,5 +1,5 @@
 import time
-from config.connection import get_client, get_ecs_client, get_vpc_client
+from config.connection import get_client, get_ecs_client, get_vpc_client, get_eps_client
 from huaweicloudsdkiam.v3 import (
     KeystoneListGroupsRequest,
     KeystoneRemoveUserFromGroupRequest,
@@ -19,6 +19,12 @@ from huaweicloudsdkvpc.v2 import (
     DeleteVpcRequest,
     ListSubnetsRequest,
     DeleteSubnetRequest,
+)
+from huaweicloudsdkeps.v1 import (
+    ListEnterpriseProjectRequest,
+    DisableEnterpriseProjectRequest,
+    DisableAction,
+    DeleteEnterpriseProjectRequest,
 )
 from huaweicloudsdkcore.exceptions import exceptions
 
@@ -95,9 +101,62 @@ def delete_subnets_and_vpc(vpc_client, group_name: str):
         print(f"[ERROR] VPC/Subnets: {e.error_msg}")
 
 
+def delete_perm_groups(iam_client, usernames: list[str]):
+    perm_names = {f"perm-{u}" for u in usernames}
+    try:
+        all_groups = iam_client.keystone_list_groups(KeystoneListGroupsRequest()).groups or []
+        perm_groups = [g for g in all_groups if g.name in perm_names]
+        if not perm_groups:
+            print("[INFO] No se encontraron grupos perm-{username}.")
+            return
+        for g in perm_groups:
+            try:
+                iam_client.keystone_delete_group(KeystoneDeleteGroupRequest(group_id=g.id))
+                print(f"[OK] Grupo de permisos eliminado: {g.name}")
+            except exceptions.ClientRequestException as e:
+                print(f"[ERROR] No se pudo eliminar grupo {g.name}: {e.error_msg}")
+    except exceptions.ClientRequestException as e:
+        print(f"[ERROR] No se pudieron listar grupos: {e.error_msg}")
+
+
+def delete_enterprise_projects(eps_client, usernames: list[str]):
+    username_set = set(usernames)
+    try:
+        response = eps_client.list_enterprise_project(ListEnterpriseProjectRequest())
+        projects = response.enterprise_projects or []
+        matches = [p for p in projects if p.name in username_set]
+        if not matches:
+            print("[INFO] No se encontraron enterprise projects para estos usuarios.")
+            return
+        print("[INFO] Esperando 15s antes de deshabilitar enterprise projects...")
+        time.sleep(15)
+        for p in matches:
+            try:
+                disable_req = DisableEnterpriseProjectRequest()
+                disable_req.enterprise_project_id = p.id
+                disable_req.body = DisableAction(action="disable")
+                eps_client.disable_enterprise_project(disable_req)
+                print(f"[OK] Enterprise project deshabilitado: {p.name} ({p.id})")
+            except exceptions.ClientRequestException as e:
+                print(f"[WARN] No se pudo deshabilitar EP {p.name}: {e.error_msg}")
+
+            print("[INFO] Esperando 15s antes de eliminar enterprise project...")
+            time.sleep(15)
+            try:
+                delete_req = DeleteEnterpriseProjectRequest()
+                delete_req.enterprise_project_id = p.id
+                eps_client.delete_enterprise_project(delete_req)
+                print(f"[OK] Enterprise project eliminado: {p.name} ({p.id})")
+            except exceptions.ClientRequestException as e:
+                print(f"[ERROR] No se pudo eliminar EP {p.name}: {e.error_msg}")
+    except exceptions.ClientRequestException as e:
+        print(f"[ERROR] No se pudieron listar enterprise projects: {e.error_msg}")
+
+
 def delete_single_user(username: str, group_name: str, config_file: str = "config/config.json"):
     iam_client = get_client(config_file)
     ecs_client = get_ecs_client(config_file)
+    eps_client = get_eps_client(config_file)
 
     try:
         response = iam_client.keystone_list_users(KeystoneListUsersRequest())
@@ -123,6 +182,9 @@ def delete_single_user(username: str, group_name: str, config_file: str = "confi
                 print(f"[OK] Usuario removido del grupo: {username}")
             except exceptions.ClientRequestException as e:
                 print(f"[WARN] No se pudo remover {username} del grupo: {e.error_msg}")
+
+    delete_perm_groups(iam_client, [username])
+    delete_enterprise_projects(eps_client, [username])
 
     try:
         iam_client.keystone_delete_user(KeystoneDeleteUserRequest(user_id=user.id))
@@ -204,6 +266,7 @@ def delete_all(group_name: str, config_file: str = "config/config.json"):
     iam_client = get_client(config_file)
     ecs_client = get_ecs_client(config_file)
     vpc_client = get_vpc_client(config_file)
+    eps_client = get_eps_client(config_file)
 
     group = find_group(iam_client, group_name)
     if not group:
@@ -221,6 +284,9 @@ def delete_all(group_name: str, config_file: str = "config/config.json"):
         time.sleep(15)
 
     delete_subnets_and_vpc(vpc_client, group_name)
+
+    if usernames:
+        delete_perm_groups(iam_client, usernames)
 
     for username, user_id in user_ids.items():
         try:
@@ -242,3 +308,8 @@ def delete_all(group_name: str, config_file: str = "config/config.json"):
         print(f"[OK] Grupo eliminado: {group_name}")
     except exceptions.ClientRequestException as e:
         print(f"[ERROR] No se pudo eliminar el grupo: {e.error_msg}")
+
+    if usernames:
+        print("[INFO] Esperando 30s para que se liberen los recursos del EP...")
+        time.sleep(30)
+        delete_enterprise_projects(eps_client, usernames)
