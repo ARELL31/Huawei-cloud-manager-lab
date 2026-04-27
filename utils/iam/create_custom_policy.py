@@ -8,7 +8,8 @@ from huaweicloudsdkiam.v3 import (
 )
 from huaweicloudsdkcore.exceptions import exceptions
 
-POLICY_NAME = "ECS_Owner_Access"
+POLICY_NAME = "ECS_VNC_SSH_Only"
+
 
 def build_policy_document():
     return {
@@ -17,42 +18,44 @@ def build_policy_document():
             {
                 "Effect": "Allow",
                 "Action": [
-                    "ecs:*:get*",
-                    "ecs:*:list*",
-                    "ecs:serverGroups:manage",
-                    "ecs:serverVolumes:use",
-                    "evs:*:get*",
-                    "evs:*:list*",
-                    "vpc:*:get*",
-                    "vpc:*:list*",
-                    "ims:*:get*",
-                    "ims:*:list*",
+                    "ecs:servers:list",
+                    "ecs:servers:get",
+                    "ecs:serverConsoles:create",
+                    "ecs:serverInterfaces:get",
+                    "ecs:serverInterfaces:list",
+                    "evs:volumes:get",
+                    "evs:volumes:list",
+                    "vpc:ports:get",
+                    "vpc:publicips:get",
+                    "vpc:subnets:get",
+                    "vpc:networks:get",
+                    "vpc:floatingips:get",
                 ]
-            },
-            {
-                "Effect": "Allow",
-                "Action": [
-                    "ecs:*:*",
-                ],
-                "Condition": {
-                    "StringEquals": {
-                        "ecs:ResourceTag/owner": ["${iam:username}"]
-                    }
-                }
             },
             {
                 "Effect": "Deny",
                 "Action": [
-                    "ecs:*:*",
-                ],
-                "Condition": {
-                    "StringNotEquals": {
-                        "ecs:ResourceTag/owner": ["${iam:username}"]
-                    }
-                }
+                    "ecs:servers:create",
+                    "ecs:servers:delete",
+                    "ecs:servers:update",
+                    "ecs:servers:start",
+                    "ecs:servers:stop",
+                    "ecs:servers:reboot",
+                    "ecs:servers:resize",
+                    "ecs:serverVolumes:use",
+                    "ecs:serverVolumes:delete",
+                    "ecs:serverKeypairs:create",
+                    "ecs:serverPasswords:update",
+                    "ecs:serverGroups:manage",
+                    "ecs:serverTags:create",
+                    "ecs:serverTags:delete",
+                    "ecs:serverMetadata:set",
+                    "ecs:serverMetadata:delete",
+                ]
             }
         ]
     }
+
 
 def find_existing_policy(client, policy_name: str):
     try:
@@ -76,9 +79,9 @@ def create_custom_policy(config_file: str = "config/config.json") -> str | None:
 
     try:
         role_option = ServicePolicyRoleOption(
-            display_name="ECS Owner Access",
+            display_name="ECS VNC/SSH Only",
             type="AX",
-            description="Permite gestionar solo la ECS propia por tag owner",
+            description="Solo acceso por VNC y SSH. Sin permisos de encendido, apagado, reinicio, borrado ni modificacion.",
             policy=build_policy_document()
         )
 

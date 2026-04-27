@@ -2,7 +2,7 @@ from config.connection import get_client, load_config
 from utils.convert_cvs import csv_to_iam_users
 from utils.iam.create_user_group import create_user_group
 from utils.iam.add_user_group import add_users_to_group
-from utils.iam.grant_user_group import grant_group_role
+from utils.iam.grant_enterprise_permissions import grant_enterprise_permissions_batch
 from utils.vpc.create_vpc import create_vpc
 from utils.vpc.create_user_subnets import create_user_subnets
 from utils.ecs.create_user_ecs import create_user_ecs
@@ -20,6 +20,7 @@ def _print_summary(
     iam_created: list[str],
     iam_failed: list[str],
     ep_ids: dict | None,
+    perm_report: dict | None,
     subnets_created: dict,
     ecs_report: dict | None,
 ):
@@ -37,6 +38,13 @@ def _print_summary(
         print(f"  Enterprise P.: {len(ep_ids):>3} creados   {ep_failed:>3} fallaron")
     else:
         print("  Enterprise P.:   — (no se intentó)")
+
+    if perm_report is not None:
+        perm_failed = len(perm_report["failed"])
+        perm_ok = len(perm_report["granted"])
+        print(f"  Permisos VNC : {perm_ok:>3} asignados {perm_failed:>3} fallaron")
+    else:
+        print("  Permisos VNC :   — (no se intentó)")
 
     if subnets_created is not None:
         subnets_failed_names = [u for u in iam_created if u not in subnets_created]
@@ -124,13 +132,13 @@ def create_users(
 
     if not group_name:
         _print_summary(all_usernames, iam_created, iam_failed,
-                       ep_ids=None, subnets_created=None, ecs_report=None)
+                       ep_ids=None, perm_report=None, subnets_created=None, ecs_report=None)
         return
 
     if not iam_created:
         print("[AVISO] No se creó ningún usuario. Se omiten grupo, VPC y ECS.")
         _print_summary(all_usernames, iam_created, iam_failed,
-                       ep_ids=None, subnets_created=None, ecs_report=None)
+                       ep_ids=None, perm_report=None, subnets_created=None, ecs_report=None)
         return
 
     ep_ids = create_enterprise_projects(
@@ -139,21 +147,27 @@ def create_users(
         on_progress=_phase_cb("ep"),
     )
 
+    perm_report = grant_enterprise_permissions_batch(
+        usernames=iam_created,
+        ep_ids=ep_ids,
+        config_file=config_file,
+        on_progress=_phase_cb("perm"),
+    )
+
     group = create_user_group(group_name, config_file=config_file)
     if not group:
-        print("[AVISO] No se pudo crear el grupo. Se omiten membresía, política, VPC y ECS.")
+        print("[AVISO] No se pudo crear el grupo. Se omiten membresía, VPC y ECS.")
         _print_summary(all_usernames, iam_created, iam_failed,
-                       ep_ids=ep_ids, subnets_created=None, ecs_report=None)
+                       ep_ids=ep_ids, perm_report=perm_report, subnets_created=None, ecs_report=None)
         return
 
     add_users_to_group(iam_created, group_name, config_file=config_file)
-    grant_group_role(group_name, config_file=config_file)
 
     vpc = create_vpc(vpc_name=group_name, cidr="10.0.0.0/16", config_file=config_file)
     if not vpc:
         print("[AVISO] No se pudo crear la VPC. Se omiten subnets y ECS.")
         _print_summary(all_usernames, iam_created, iam_failed,
-                       ep_ids=ep_ids, subnets_created=None, ecs_report=None)
+                       ep_ids=ep_ids, perm_report=perm_report, subnets_created=None, ecs_report=None)
         return
 
     subnets_created = create_user_subnets(
@@ -166,7 +180,7 @@ def create_users(
     if not subnets_created:
         print("[AVISO] No se creó ninguna subnet. Se omite la creación de ECS.")
         _print_summary(all_usernames, iam_created, iam_failed,
-                       ep_ids=ep_ids, subnets_created=subnets_created, ecs_report=None)
+                       ep_ids=ep_ids, perm_report=perm_report, subnets_created=subnets_created, ecs_report=None)
         return
 
     ecs_report = create_user_ecs(
@@ -178,4 +192,4 @@ def create_users(
     )
 
     _print_summary(all_usernames, iam_created, iam_failed,
-                   ep_ids=ep_ids, subnets_created=subnets_created, ecs_report=ecs_report)
+                   ep_ids=ep_ids, perm_report=perm_report, subnets_created=subnets_created, ecs_report=ecs_report)
