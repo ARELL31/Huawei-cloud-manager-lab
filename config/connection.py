@@ -6,6 +6,7 @@ from huaweicloudsdkecs.v2 import EcsClient
 from huaweicloudsdkecs.v2.region.ecs_region import EcsRegion
 from huaweicloudsdkvpc.v2 import VpcClient
 from huaweicloudsdkvpc.v2.region.vpc_region import VpcRegion
+from huaweicloudsdkeps.v1 import EpsClient
 
 
 def load_config(config_file: str = "config/config.json") -> dict:
@@ -53,5 +54,19 @@ def get_vpc_client(config_file: str = "config/config.json") -> VpcClient:
         VpcClient.new_builder()
         .with_credentials(credentials)
         .with_region(VpcRegion.value_of(config["region"]))
+        .build()
+    )
+
+
+def get_eps_client(config_file: str = "config/config.json") -> EpsClient:
+    config = load_config(config_file)
+    credentials = GlobalCredentials(
+        ak=config["ak"],
+        sk=config["sk"],
+    )
+    return (
+        EpsClient.new_builder()
+        .with_credentials(credentials)
+        .with_endpoint("https://eps.myhuaweicloud.com")
         .build()
     )

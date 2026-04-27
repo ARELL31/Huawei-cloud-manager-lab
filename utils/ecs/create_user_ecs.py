@@ -8,6 +8,7 @@ from huaweicloudsdkecs.v2 import (
     PrePaidServerPublicip,
     PrePaidServerEip,
     PrePaidServerEipBandwidth,
+    PrePaidServerExtendParam,
 )
 from huaweicloudsdkcore.exceptions import exceptions
 
@@ -15,6 +16,7 @@ from huaweicloudsdkcore.exceptions import exceptions
 def create_user_ecs(
     vpc_id: str,
     user_subnets: dict,
+    ep_ids: dict | None = None,
     config_file: str = "config/config.json",
     on_progress=None,
 ) -> dict:
@@ -41,6 +43,11 @@ def create_user_ecs(
                 eip=PrePaidServerEip(iptype="5_bgp", bandwidth=bandwidth)
             )
 
+            ep_id = (ep_ids or {}).get(username)
+            extendparam = PrePaidServerExtendParam(
+                enterprise_project_id=ep_id
+            ) if ep_id else None
+
             server = PrePaidServer(
                 image_ref=ecs_config["image_ref"],
                 flavor_ref=ecs_config["flavor_ref"],
@@ -50,6 +57,7 @@ def create_user_ecs(
                 publicip=publicip,
                 root_volume=root_volume,
                 metadata={"owner": username},
+                extendparam=extendparam,
             )
 
             request = CreateServersRequest()

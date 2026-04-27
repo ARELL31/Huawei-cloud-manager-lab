@@ -2,6 +2,7 @@ huaweicloudsdkcore
 huaweicloudsdkvpc
 huaweicloudsdkecs
 huaweicloudsdkiam
+huaweicloudsdkeps
 huaweicloudsdkobs
 huaweicloudsdkfunctiongraph
 wxPython
