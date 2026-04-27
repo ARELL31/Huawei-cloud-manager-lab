@@ -6,6 +6,7 @@ from utils.iam.grant_user_group import grant_group_role
 from utils.vpc.create_vpc import create_vpc
 from utils.vpc.create_user_subnets import create_user_subnets
 from utils.ecs.create_user_ecs import create_user_ecs
+from utils.eps.create_enterprise_project import create_enterprise_projects
 from huaweicloudsdkiam.v3 import (
     CreateUserRequest,
     CreateUserRequestBody,
@@ -18,6 +19,7 @@ def _print_summary(
     all_usernames: list[str],
     iam_created: list[str],
     iam_failed: list[str],
+    ep_ids: dict | None,
     subnets_created: dict,
     ecs_report: dict | None,
 ):
@@ -29,6 +31,12 @@ def _print_summary(
     iam_skip = len(all_usernames) - len(iam_created) - len(iam_failed)
     print(f"  Usuarios IAM : {len(iam_created):>3} creados  "
           f"{len(iam_failed):>3} fallaron  {iam_skip:>3} omitidos")
+
+    if ep_ids is not None:
+        ep_failed = len(iam_created) - len(ep_ids)
+        print(f"  Enterprise P.: {len(ep_ids):>3} creados   {ep_failed:>3} fallaron")
+    else:
+        print("  Enterprise P.:   — (no se intentó)")
 
     if subnets_created is not None:
         subnets_failed_names = [u for u in iam_created if u not in subnets_created]
@@ -116,20 +124,26 @@ def create_users(
 
     if not group_name:
         _print_summary(all_usernames, iam_created, iam_failed,
-                       subnets_created=None, ecs_report=None)
+                       ep_ids=None, subnets_created=None, ecs_report=None)
         return
 
     if not iam_created:
         print("[AVISO] No se creó ningún usuario. Se omiten grupo, VPC y ECS.")
         _print_summary(all_usernames, iam_created, iam_failed,
-                       subnets_created=None, ecs_report=None)
+                       ep_ids=None, subnets_created=None, ecs_report=None)
         return
+
+    ep_ids = create_enterprise_projects(
+        usernames=iam_created,
+        config_file=config_file,
+        on_progress=_phase_cb("ep"),
+    )
 
     group = create_user_group(group_name, config_file=config_file)
     if not group:
         print("[AVISO] No se pudo crear el grupo. Se omiten membresía, política, VPC y ECS.")
         _print_summary(all_usernames, iam_created, iam_failed,
-                       subnets_created=None, ecs_report=None)
+                       ep_ids=ep_ids, subnets_created=None, ecs_report=None)
         return
 
     add_users_to_group(iam_created, group_name, config_file=config_file)
@@ -139,7 +153,7 @@ def create_users(
     if not vpc:
         print("[AVISO] No se pudo crear la VPC. Se omiten subnets y ECS.")
         _print_summary(all_usernames, iam_created, iam_failed,
-                       subnets_created=None, ecs_report=None)
+                       ep_ids=ep_ids, subnets_created=None, ecs_report=None)
         return
 
     subnets_created = create_user_subnets(
@@ -152,15 +166,16 @@ def create_users(
     if not subnets_created:
         print("[AVISO] No se creó ninguna subnet. Se omite la creación de ECS.")
         _print_summary(all_usernames, iam_created, iam_failed,
-                       subnets_created=subnets_created, ecs_report=None)
+                       ep_ids=ep_ids, subnets_created=subnets_created, ecs_report=None)
         return
 
     ecs_report = create_user_ecs(
         vpc_id=vpc.id,
         user_subnets=subnets_created,
+        ep_ids=ep_ids,
         config_file=config_file,
         on_progress=_phase_cb("ecs"),
     )
 
     _print_summary(all_usernames, iam_created, iam_failed,
-                   subnets_created=subnets_created, ecs_report=ecs_report)
+                   ep_ids=ep_ids, subnets_created=subnets_created, ecs_report=ecs_report)
