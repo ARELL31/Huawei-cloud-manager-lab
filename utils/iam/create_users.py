@@ -187,6 +187,7 @@ def create_users(
         vpc_id=vpc.id,
         user_subnets=subnets_created,
         ep_ids=ep_ids,
+        group_name=group_name,
         config_file=config_file,
         on_progress=_phase_cb("ecs"),
     )

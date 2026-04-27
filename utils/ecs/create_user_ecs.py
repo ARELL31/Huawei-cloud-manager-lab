@@ -17,6 +17,7 @@ def create_user_ecs(
     vpc_id: str,
     user_subnets: dict,
     ep_ids: dict | None = None,
+    group_name: str = "",
     config_file: str = "config/config.json",
     on_progress=None,
 ) -> dict:
@@ -48,6 +49,8 @@ def create_user_ecs(
                 enterprise_project_id=ep_id
             ) if ep_id else None
 
+            admin_pass = f"{group_name}123!" if group_name else None
+
             server = PrePaidServer(
                 image_ref=ecs_config["image_ref"],
                 flavor_ref=ecs_config["flavor_ref"],
@@ -56,6 +59,7 @@ def create_user_ecs(
                 nics=[PrePaidServerNic(subnet_id=subnet_id)],
                 publicip=publicip,
                 root_volume=root_volume,
+                admin_pass=admin_pass,
                 metadata={"owner": username},
                 extendparam=extendparam,
             )
