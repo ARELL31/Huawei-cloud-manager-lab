@@ -13,6 +13,8 @@ from gui.widgets import field, confirm, run_thread
 class CreatePanel(ProgressMixin, wx.ScrolledWindow):
     _PHASE_LABELS = {
         "iam":    "Creando usuarios IAM",
+        "ep":     "Creando enterprise projects",
+        "perm":   "Asignando permisos VNC/SSH",
         "subnet": "Creando subnets",
         "ecs":    "Creando instancias ECS",
     }
@@ -124,7 +126,7 @@ class CreatePanel(ProgressMixin, wx.ScrolledWindow):
         group_name = self.grp_create.GetValue().strip() or None
         self._busy(True)
 
-        phases = ["iam", "subnet", "ecs"] if group_name else ["iam"]
+        phases = ["iam", "ep", "perm", "subnet", "ecs"] if group_name else ["iam"]
         self.start_gauge(n * len(phases), f"Iniciando...  0/{n}")
 
         _phase_offsets = {p: i * n for i, p in enumerate(phases)}
